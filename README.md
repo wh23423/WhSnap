@@ -386,6 +386,22 @@ Get-Content "$env:TEMP\whsnap-annotate-test.txt" -Encoding UTF8
 Get-Content "$env:TEMP\whsnap-element-test.txt" -Encoding UTF8
 ```
 
+### 更新链路自检
+
+在临时目录里用**本地传输**端到端验证更新链路：清单解析与语义化版本比较 → 检查到可更新 →
+下载 + SHA-256 校验 → **篡改安装包必须被拒且不残留临时文件** → 缺哈希拒绝下载 → 通道规则
+（稳定通道拒绝 beta）→ 旧版本不提示 → 最低可升级版本门槛 → 缺失/损坏清单不抛异常 → 静默安装参数。
+不需要联网，也不会真的启动安装器：
+
+```powershell
+& src\WhSnap.App\bin\Release\net8.0-windows10.0.22000.0\WhSnap.exe --update-test
+Get-Content "$env:TEMP\whsnap-update-test.txt" -Encoding UTF8
+```
+
+更新相关配置项（设置界面「更新」分组）：`CheckForUpdatesOnStartup`（默认开启，只读取一份很小的
+`update.json`，不含任何本机信息）、`UpdateChannel`（stable / beta）、`UpdateAutoDownload`
+（默认关闭）、`UpdateManifestUrl`（默认取 GitHub Releases 最新版的 `update.json`，也可填本地路径做离线分发）。
+
 ---
 
 ## 分发（自己 + 小圈子）

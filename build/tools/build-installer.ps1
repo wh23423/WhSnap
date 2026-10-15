@@ -108,6 +108,9 @@ if (-not $IsccPath) {
 Write-Host "    using $IsccPath (version $Version)"
 if (-not (Test-Path $installerDir)) { New-Item -ItemType Directory -Path $installerDir -Force | Out-Null }
 
+# 先清掉上一次的安装包：artifacts/installer 里混着旧版本时，分发很容易拿错文件
+Get-ChildItem $installerDir -Filter '*.exe' -ErrorAction SilentlyContinue | Remove-Item -Force
+
 & $IsccPath "/DMyAppVersion=$Version" $issFile
 if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE." }
 

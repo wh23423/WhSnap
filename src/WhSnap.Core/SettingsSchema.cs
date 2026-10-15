@@ -147,6 +147,21 @@ public static class SettingsSchema
                 new("block", "阻断并询问我（推荐）"),
                 new("save-disabled", "保存但停用冲突的热键"),
             ]),
+        // ---- 更新 ----
+        new("CheckForUpdatesOnStartup", "更新", "启动时检查更新", SettingKind.Bool,
+            "只读取一份很小的 update.json（不含任何本机信息），不会自动下载；关掉则完全不做联网检查。"),
+        new("UpdateChannel", "更新", "更新通道", SettingKind.Choice,
+            "稳定通道只接受正式版；测试通道同时接受预览版。",
+            Options:
+            [
+                new("stable", "稳定版（stable）"),
+                new("beta", "测试版（beta，含预览版）"),
+            ]),
+        new("UpdateAutoDownload", "更新", "发现新版本时自动下载", SettingKind.Bool,
+            "下载完成后会校验 SHA-256，再提示你安装；关闭时只在托盘提示有新版本。"),
+        new("UpdateManifestUrl", "更新", "更新清单地址", SettingKind.Text,
+            "默认取 GitHub Releases 最新版的 update.json；也可填本地路径（离线分发或自检用）。",
+            Placeholder: "https://…/update.json"),
     ];
 
     public static IReadOnlyList<string> Groups { get; } =

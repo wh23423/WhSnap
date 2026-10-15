@@ -156,6 +156,20 @@ internal sealed class AppSettings
     public string AnnotationPalette { get; set; } =
         "#FF3B30,#FF9500,#FFCC00,#34C759,#007AFF,#AF52DE,#FFFFFF,#000000";
 
+    // ---- 更新 ----
+
+    /// <summary>启动时检查更新（只读一份很小的 update.json，不自动下载）。</summary>
+    public bool CheckForUpdatesOnStartup { get; set; } = true;
+
+    /// <summary>更新通道：stable 只接受正式版，beta 同时接受预览版。</summary>
+    public string UpdateChannel { get; set; } = "stable";
+
+    /// <summary>发现新版本时自动下载（下载后校验 SHA-256 并提示安装）。</summary>
+    public bool UpdateAutoDownload { get; set; }
+
+    /// <summary>更新清单地址；支持 https 与本地路径（离线分发 / 自检用）。</summary>
+    public string UpdateManifestUrl { get; set; } = "https://github.com/wh23423/WhSnap/releases/latest/download/update.json";
+
     [JsonIgnore]
     public static JsonSerializerOptions SerializerOptions { get; } = new()
     {
