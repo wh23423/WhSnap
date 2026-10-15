@@ -34,6 +34,9 @@ public partial class App : System.Windows.Application
     {
         base.OnStartup(e);
 
+        // 性能埋点：用进程真实启动时间做基线（比"进入 OnStartup"更接近冷启动）
+        PerfTrace.StartSession();
+
         if (e.Args.Any(a => a.Equals("--selftest", StringComparison.OrdinalIgnoreCase)))
         {
             Shutdown(SelfTestRunner.Run());
@@ -220,6 +223,10 @@ public partial class App : System.Windows.Application
         UpdateTrayPinState();
         _tray.SyncRecentColors(_colorHistory.Items);
 
+        // 性能埋点（规划 §2.2 第 4 项）：冷启动 → 托盘就绪（图标 + 菜单 + 状态已就绪）
+        PerfTrace.RecordSinceSessionStart(PerfMetric.ColdStartToTray);
+        PerfTrace.Persist();
+
         var hotkeyResults = ApplyHotkeys();
         EnsureAutoStartState();
 
@@ -279,6 +286,9 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(System.Windows.ExitEventArgs e)
     {
+        // 把本次会话的性能样本落盘（下次运行/自检/诊断包里能看到真实数字）
+        PerfTrace.Persist();
+
         _topology?.Dispose();
         _clipboard?.Dispose();
         _pins?.Dispose();
@@ -338,6 +348,8 @@ public partial class App : System.Windows.Application
             switch (actionId)
             {
                 case "capture.region":
+                    // 性能埋点：热键派发即开表，遮罩显示完成时由 OverlaySession 结束它
+                    PerfTrace.BeginMetric(PerfMetric.HotkeyToOverlay);
                     OnCaptureRequested();
                     break;
 
@@ -654,7 +666,8 @@ public partial class App : System.Windows.Application
             monitors: BuildMonitorText(),
             hotkeys: BuildHotkeyText(),
             settingsJson: _settings?.ExportJson() ?? "{}",
-            outputDirectory: DiagnosticsPack.DefaultDirectory);
+            outputDirectory: DiagnosticsPack.DefaultDirectory,
+            performanceReport: PerfTrace.Report());
 
     private string BuildMonitorText()
     {

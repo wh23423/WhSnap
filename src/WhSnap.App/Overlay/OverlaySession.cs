@@ -50,6 +50,7 @@ internal sealed class OverlaySession
     private PhysicalPoint _pressPoint;
     private int _elementGeneration;
     private bool _resolved;
+    private readonly long _createdTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
 
     public OverlaySession(
         CaptureFrame frame,
@@ -125,6 +126,14 @@ internal sealed class OverlaySession
         {
             StatusReported?.Invoke("取色器：点一下即可取色并复制，Esc 退出。", false);
         }
+
+        // 性能埋点（规划 §2.2 第 1 项）：真实路径下 App 在热键派发时就开了起点，
+        // 这里结束它（含 热键 → 冻结屏幕 → 建窗 → 显示 全程）；自检直接构造会话时没有起点，
+        // 退化成"创建 → 显示可交互"。
+        PerfTrace.EndMetricOrRecord(
+            PerfMetric.HotkeyToOverlay,
+            System.Diagnostics.Stopwatch.GetElapsedTime(_createdTimestamp),
+            "自检：创建会话 → 遮罩可交互（不含热键往返）");
     }
 
     internal void OnPointerPressed(PhysicalPoint absolute, int clickCount)
@@ -167,6 +176,10 @@ internal sealed class OverlaySession
 
     internal void OnPointerMoved(PhysicalPoint absolute)
     {
+        // 性能埋点（规划 §2.2 第 2 项）：从收到移动事件到"选区 + 光标 HUD 重绘完成"的同步耗时。
+        // UIA 元素高亮是异步到达的，不在这一项里（由 --element-test 的悬停→高亮单独统计）。
+        long start = System.Diagnostics.Stopwatch.GetTimestamp();
+
         if (_selection.IsDragging)
         {
             _selection.Update(absolute);
@@ -185,6 +198,8 @@ internal sealed class OverlaySession
         }
 
         UpdateCursor(absolute);
+
+        PerfTrace.Record(PerfMetric.MouseFollow, System.Diagnostics.Stopwatch.GetElapsedTime(start));
     }
 
     internal void OnPointerReleased()
@@ -460,6 +475,11 @@ internal sealed class OverlaySession
             rect.Y - _frame.VirtualBounds.Y,
             rect.Width,
             rect.Height);
+
+        // 性能埋点（规划 §2.2 第 3 项）：确认 → 裁剪 → 宿主动作。
+        // 起点开在这里，**由宿主在真正写入剪贴板后结束**（只有走到剪贴板那一步才算"可粘贴"；
+        // 选保存/贴图或没有宿主动作时会话会取消这条起点）。
+        PerfTrace.BeginMetric(PerfMetric.ConfirmToClipboard);
 
         var result = new CroppedBitmap(_frame.Image, cropRect);
         result.Freeze();

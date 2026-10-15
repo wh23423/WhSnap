@@ -342,6 +342,80 @@ internal static class SelfTestRunner
             }
         });
 
+        Check("性能埋点：4 项指标齐全 + 4K 确认→剪贴板实测（含防回归红线）", () =>
+        {
+            // ① 用 4K 合成图走真实剪贴板路径（含 PNG 编码），这是"确认 → 可粘贴"里最重的一段
+            const int width = 3840;
+            const int height = 2160;
+            var pixels = new byte[width * height * 4];
+
+            for (int y = 0; y < height; y++)
+            {
+                int row = y * width * 4;
+
+                for (int x = 0; x < width; x++)
+                {
+                    int index = row + (x * 4);
+                    pixels[index] = (byte)(x % 256);
+                    pixels[index + 1] = (byte)(y % 256);
+                    pixels[index + 2] = (byte)((x + y) % 256);
+                    pixels[index + 3] = 0xFF;
+                }
+            }
+
+            var image = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32, null, pixels, width * 4);
+            image.Freeze();
+
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            bool copied = ClipboardService.TryCopy(image, out string copyError);
+            stopwatch.Stop();
+
+            if (!copied)
+            {
+                throw new InvalidOperationException($"4K 图写入剪贴板失败：{copyError}");
+            }
+
+            PerfTrace.Record(PerfMetric.ConfirmToClipboard, stopwatch.Elapsed, "自检：4K 合成图（含 PNG 编码）");
+            PerfTrace.Persist();
+
+            // ② 报告必须四项齐全（守住"埋点没被删掉"）
+            string report = PerfTrace.Report();
+
+            foreach (var info in PerfTrace.Metrics)
+            {
+                if (!report.Contains(info.Display, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException($"性能报告里缺少指标：{info.Display}");
+                }
+
+                if (!report.Contains(info.TargetMs >= 1000 ? $"{info.TargetMs / 1000:0.##} s" : $"{info.TargetMs:0.#} ms", StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException($"性能报告里缺少 {info.Display} 的规划门槛。");
+                }
+            }
+
+            // ③ 防回归红线（比规划门槛宽松得多，只防止后续改动把性能拖垮）
+            foreach (var info in PerfTrace.Metrics)
+            {
+                double? median = PerfTrace.Median(info.Metric);
+
+                if (median is null)
+                {
+                    continue; // 没采到样本的指标（例如冷启动）只在报告里显示，不判失败
+                }
+
+                if (median > info.RegressionCeilingMs)
+                {
+                    throw new InvalidOperationException(
+                        $"{info.Display} 中位 {median:0.#} ms 超过防回归红线 {info.RegressionCeilingMs:0.#} ms。");
+                }
+            }
+
+            double copyMedian = PerfTrace.Median(PerfMetric.ConfirmToClipboard) ?? 0;
+            return $"4K 确认→剪贴板 {stopwatch.Elapsed.TotalMilliseconds:0.#} ms（中位 {copyMedian:0.#} ms，门槛 ≤ 400 ms）；"
+                   + string.Join("；", PerfTrace.Summarize());
+        });
+
         Check("开机自启状态读取", () =>
         {
             bool enabled = AutoStartService.IsEnabled();
@@ -608,7 +682,28 @@ internal static class SelfTestRunner
 
             try
             {
-                var frame = ScreenCaptureFactory.Create(backend).Capture();
+                CaptureFrame frame;
+
+                try
+                {
+                    frame = ScreenCaptureFactory.Create(backend).Capture();
+                }
+                catch (InvalidOperationException ex) when (backend == CaptureBackend.Dxgi && ex.Message.Contains("空帧", StringComparison.Ordinal))
+                {
+                    // DXGI Desktop Duplication 只在画面有变化时给帧：显示空闲/熄屏时可能连续取到空帧。
+                    // 这是环境性的，不是代码故障——等一下重试一次；仍然失败就记为 SKIP 并说明原因，
+                    // 免得每次熄屏都报一次假警报（auto 链此时会回退到 GDI，那条路径仍有断言）。
+                    Thread.Sleep(600);
+                    try
+                    {
+                        frame = ScreenCaptureFactory.Create(backend).Capture();
+                    }
+                    catch (InvalidOperationException retry) when (retry.Message.Contains("空帧", StringComparison.Ordinal))
+                    {
+                        throw new CaptureNotSupportedException(
+                            $"显示空闲/熄屏时 DXGI 取不到帧（重试一次仍为空）；这是环境性抖动，重跑自检或让屏幕有画面即可。原始信息：{retry.Message}");
+                    }
+                }
 
                 if (frame.Image.PixelWidth != frame.VirtualBounds.Width || frame.Image.PixelHeight != frame.VirtualBounds.Height)
                 {

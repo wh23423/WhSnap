@@ -149,12 +149,21 @@ internal sealed class CaptureController(SettingsService settings)
             if (ClipboardService.TryCopy(image, out string copyError))
             {
                 parts.Add("已复制到剪贴板");
+
+                // 性能埋点（规划 §2.2 第 3 项）：到这一刻剪贴板才真的可粘贴
+                PerfTrace.EndMetric(PerfMetric.ConfirmToClipboard, $"{rect.Width}x{rect.Height}");
             }
             else
             {
                 parts.Add($"复制失败（{copyError}）");
                 Log.Warn($"复制到剪贴板失败：{copyError}");
+                PerfTrace.CancelMetric(PerfMetric.ConfirmToClipboard);
             }
+        }
+        else
+        {
+            // 不走剪贴板的确认（只保存 / 只贴图）不参与"确认 → 可粘贴"的统计
+            PerfTrace.CancelMetric(PerfMetric.ConfirmToClipboard);
         }
 
         if (save)

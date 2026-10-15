@@ -27,7 +27,7 @@ internal sealed record DiagnosticsPackContext
     /// <summary>日志目录（取其中最新的一份日志，截断后带进包）。</summary>
     public string? LogDirectory { get; init; }
 
-    /// <summary>性能埋点报告（M6 第 7 项落地前为 null，包里写占位说明）。</summary>
+    /// <summary>性能埋点报告（<see cref="PerfTrace.Report"/>；为 null 时包里写占位说明）。</summary>
     public string? PerformanceReport { get; init; }
 
     /// <summary>现有崩溃文本报告（新的在前）：完整带进包。</summary>
@@ -198,7 +198,8 @@ internal static class DiagnosticsPack
     }
 
     private static string BuildPerformance(DiagnosticsPackContext context) =>
-        context.PerformanceReport ?? "（性能埋点尚未实现：M6 第 7 项完成后，本文件会自动带上热键→遮罩、鼠标跟随、确认→剪贴板、冷启动四项实测值。）";
+        context.PerformanceReport
+        ?? "（本次没有带上性能报告：命令行/界面导出会自动附上 PerfTrace 报告；只有自检构造的临时上下文才为空。）";
 
     private static string BuildCrashIndex(DiagnosticsPackContext context)
     {

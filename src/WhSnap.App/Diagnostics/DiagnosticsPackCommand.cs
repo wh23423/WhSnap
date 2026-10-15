@@ -36,7 +36,8 @@ internal static class DiagnosticsPackCommand
                     : string.Join(Environment.NewLine, monitors.Select(m => m.ToString())),
                 hotkeys: BuildHotkeys(bindings),
                 settingsJson: settings.ExportJson(),
-                outputDirectory: string.IsNullOrWhiteSpace(outputDirectory) ? DiagnosticsPack.DefaultDirectory : outputDirectory);
+                outputDirectory: string.IsNullOrWhiteSpace(outputDirectory) ? DiagnosticsPack.DefaultDirectory : outputDirectory,
+                performanceReport: PerfTrace.Report());
 
             var result = DiagnosticsPack.Create(context);
 
