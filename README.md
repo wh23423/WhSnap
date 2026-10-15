@@ -221,7 +221,8 @@ UIA 查询走**线程池 + 超时 + 过期结果丢弃**，绝不阻塞界面—
 - 贴图缩放上限 32×，并且单张贴图缓冲超过 160 MB 时会拒绝继续放大（避免极端尺寸把内存打满）。
 - **低级键盘钩子降级路径（§5.7）尚未提供**：若某个键确实被系统占用，目前只能改键，不会退回 `WH_KEYBOARD_LL`
   （该方案有风险且需明确提示，排在 v1.1，见 `docs/backlog.md`）。
-- 唤醒后热键自动重注册已按 `WM_POWERBROADCAST` 监听实现，仍待实机验证。
+- 唤醒后热键自动重注册（`WM_POWERBROADCAST`）**已由 `--power-test` 在机器上验证**（重注册后热键仍被本进程持有、
+  按键仍能派发到动作）；自检是把电源消息投递给程序自己的消息窗口，**真的睡一觉再唤醒**仍建议人工确认一次。
 
 ---
 
@@ -465,7 +466,7 @@ Get-Content "$env:TEMP\whsnap-diagnostics-pack.txt" -Encoding UTF8   # 打印 zi
 ```
 
 包内结构：`README.txt`（含隐私声明）、`report.txt`（版本/进程/路径）、`monitors.txt`（显示器拓扑）、
-`hotkeys.txt`（生效热键表）、`settings.json`（当前配置）、`performance.txt`（性能埋点，T4 前是占位说明）、
+`hotkeys.txt`（生效热键表）、`settings.json`（当前配置）、`performance.txt`（性能埋点：四项指标的实测值与门槛）、
 `crashes.txt` + `crashes/`（崩溃清单与报告原文）、`logs/`（最新日志，截断到最近 2000 行）。
 
 **隐私边界**：不含剪贴板内容、不含任何凭据（本程序不存凭据）；所有文本里的用户目录
@@ -476,6 +477,24 @@ Get-Content "$env:TEMP\whsnap-diagnostics-pack.txt" -Encoding UTF8   # 打印 zi
 加 `--with-dump` 会真写一份 minidump 校验 `MDMP` 魔数后删除）、
 `--selftest`（崩溃证据 + 诊断包 zip 端到端、条目齐全、回读、脱敏）、
 `--settings-test`（维护页导出入口与失败提示）。
+
+### 唤醒后热键自检（`--power-test`）
+
+Windows 在睡眠/休眠恢复后**不会**替应用恢复全局热键注册，热键会静默失效（不报错、不崩溃，用户只觉得"按了没反应"）。
+程序靠监听 `WM_POWERBROADCAST` 自动重注册，`--power-test` 把这条路径变成机器可复现的断言：
+
+```powershell
+& src\WhSnap.App\bin\Release\net8.0-windows10.0.22000.0\WhSnap.exe --power-test
+Get-Content "$env:TEMP\whsnap-power-test.txt" -Encoding UTF8
+```
+
+8 项断言：自检键位开始前空闲 → 注册后 L1 探针拿到 Win32 1409（确实被本进程持有）→ 投递 `PBT_APMRESUMEAUTOMATIC`
+触发重注册（事件 + 日志证据）→ **重注册后热键仍被本进程持有** → 重注册后 `WM_HOTKEY` 仍派发到正确动作 →
+`PBT_APMRESUMESUSPEND` 同样触发、无关电源事件不触发 → 释放后归还系统。
+
+诚实边界：它把电源消息直接投递给程序自己的热键消息窗口（与系统广播走同一个窗口过程），
+**不是真的把机器睡下去**；"系统确实会在恢复时广播这条消息"是 Windows 既定行为，真机睡一次再唤醒仍建议人工确认。
+本自检被"故意不重新注册"的变异版本验证过：那种情况下它会报 2 项失败并 `exit 1`——不是永远绿的摆设。
 
 ---
 
@@ -507,7 +526,9 @@ git push origin v1.0.0-preview.1
 ```
 
 - 打 tag 时 CI 传 `-ReleaseBaseUrl`，`Url` 指向该 tag 的 Release 资产；本地构建不给这个参数时 `Url` 是本地绝对路径（离线分发/共享目录用）。
-- CI 的 Release 与 artifact 都会带上：安装包、`update.json`、`install-trust.ps1`、`WhSnap.cer`（证书没生成时自动跳过）。
+- CI 的 Release 与 artifact 都会带上：安装包、`update.json`、`install-trust.ps1`、`WhSnap.cer`。
+  配了 `SIGNING_PFX_BASE64` / `SIGNING_PFX_PASSWORD` 时安装包是**已签名**的、`WhSnap.cer` 由 `build-installer.ps1 -Sign`
+  从证书里导出；没配时出未签名包，那几类资产里就**不会有** `.cer`（`install-trust.ps1` 要配 `.cer` 用，没有证书时无从导入）。
 
 **验证清单是对的**（本地、不联网，会真的下载并校验哈希）：
 
@@ -540,16 +561,31 @@ Get-Content "$env:TEMP\whsnap-update-test.txt" -Encoding UTF8 | Select-Object -L
 诚实说明：**自签名证书不会消除 SmartScreen 警告，也基本不会降低杀软误报**。它的实际收益是让文件属性页显示发布者名称，并在对方导入信任后不再提示「未知发布者」。对「自己 + 小圈子」的分发方式，这是够用且免费的选择。
 
 ```powershell
-# 1. 一次性生成证书（.pfx 绝不要提交到仓库）
-powershell -File build/tools/make-cert.ps1
+# 1. 一次性生成证书到 artifacts\signing（.pfx 绝不提交，.gitignore 已排除 *.pfx / *.cer）
+powershell -File build\tools\make-cert.ps1 -Subject 'CN=WhSnap' -Years 5
 
-# 2. 本地签名
-powershell -File build/tools/sign.ps1 -Path artifacts\installer\WhSnap-0.1.0-setup-x64.exe -PfxFile artifacts\signing\WhSnap.pfx
+# 2. 打签名版安装包（签名 + update.json 一条命令搞定）
+powershell -File build\tools\build-installer.ps1 -Version 1.0.0-preview.1 `
+  -Sign -PfxFile artifacts\signing\WhSnap.pfx -PfxPassword <你的 pfx 口令>
 
 # 3. 让 CI 自动签名：把 .pfx 转成 base64 存入仓库 Secrets
 [Convert]::ToBase64String([IO.File]::ReadAllBytes("artifacts\signing\WhSnap.pfx"))
-#    Secret 名：SIGNING_PFX_BASE64 / SIGNING_PFX_PASSWORD
+#    Secret 名：SIGNING_PFX_BASE64 / SIGNING_PFX_PASSWORD（没配就出未签名包，构建不会失败）
 ```
+
+`-Sign` 的**顺序有讲究**，别手工调换：
+
+1. **先签 `artifacts\publish\WhSnap.exe`，再交给 ISCC**——安装包把这个 exe 原样装到磁盘上，签在 ISCC 之后就只签了 setup，
+   装完的程序仍然是「未知发布者」；
+2. ISCC 之后再签 setup exe，并把公开证书导出成 `artifacts\signing\WhSnap.cer`（Release 里的 `install-trust.ps1`
+   需要这个 `.cer`，而只有 `.pfx` 放在 CI secret 里时它不会自己出现）；
+3. **最后**才写 `update.json`——清单里的 SHA-256 必须是签名之后那个文件的哈希。
+
+本机实测（`v1.0.0-preview.1`）：装到磁盘的 `WhSnap.exe` 与 setup exe 都带 `CN=WhSnap` 签名 + RFC3161 时间戳，
+**导入信任后状态为 `Valid`**；在没导入过的机器上状态是 `UnknownError`（原话：
+"A certificate chain processed, but terminated in a root certificate which is not trusted"）——这正是自签名在干净机器上的常态，
+不是"签名坏了"。静默安装 / 卸载 / 用户数据保留全部照旧。**例外**：`unins000.exe` 是 Inno 在安装时现场生成的，没有签名
+（要签它得在 `.iss` 里配 `SignTool`，预览版未做；卸载时可能仍显示「未知发布者」）。
 
 接收方（每台机器一次，需管理员）：
 
@@ -557,7 +593,9 @@ powershell -File build/tools/sign.ps1 -Path artifacts\installer\WhSnap-0.1.0-set
 powershell -ExecutionPolicy Bypass -File install-trust.ps1 -CerPath .\WhSnap.cer
 ```
 
-签名需要 Windows SDK 的 `signtool`；GitHub Actions 的 `windows-latest` 已自带。
+签名需要 Windows SDK 的 `signtool`（脚本会自动探测 `Windows Kits\10\bin\…\x64\signtool.exe`），
+GitHub Actions 的 `windows-latest` 已自带。时间戳走 RFC3161（默认 `timestamp.digicert.com`），需要联网；
+没有时间戳的签名会在证书过期（本机生成的证书到 2031 年）时一起失效。
 
 ---
 
@@ -580,7 +618,7 @@ src/
                         性能埋点（PerfTrace）
     Tray/               托盘图标与菜单
     Diagnostics/        无界面自检（selftest / overlay-test / pin-test / settings-test / annotate-test / element-test /
-                        update-test / crash-test / diagnostics-pack / capture-to）tests/
+                        update-test / crash-test / power-test / diagnostics-pack / capture-to）tests/
   WhSnap.Core.Tests/    xUnit
 build/
   installer/            Inno Setup 脚本、信任导入脚本
@@ -610,9 +648,15 @@ M5 对标收尾 ✅（`v0.5.0-preview`：元素检测、取色器与颜色历史
 安装包完善、用户手册、`update.json` 与 CI 资产。
 
 **当前状态**：功能与发布工程均已完成，`v1.0.0-preview.1` 安装包已在本机通过安装 / 覆盖安装 / 卸载三连测
-（含用户数据保留与 `/DELUSERDATA` 删除两个分支）。唯一还没跑过的是 **CI**：仓库尚未推远端，
-`git remote` 为空、也没有 tag，所以 GitHub Actions 从未执行过（推上去打 tag 即可验证）。
+（含用户数据保留与 `/DELUSERDATA` 删除两个分支），并已产出**自签名版**安装包（装到磁盘的 `WhSnap.exe` 与 setup exe
+都带 `CN=WhSnap` 签名，导入信任后状态 `Valid`）。唯一还没跑过的是 **CI**：仓库尚未推远端，`git remote` 为空、也没有 tag，所以 GitHub Actions 从未执行过
+（推上去打 tag 即可验证；配好签名 secret 后 CI 出的就是签名包）。
+
+十个自检命令（`--selftest` / `--overlay-test` / `--pin-test` / `--settings-test` / `--annotate-test` /
+`--element-test` / `--update-test` / `--crash-test` / `--power-test` / `--diagnostics-pack`）全部 exit 0
+（另有 `--capture-to` 用于单后端抓屏诊断）。
 
 未在真机验证的两项：真实双屏（尤其混合缩放比）的鼠标捕获跨屏移交、HDR/宽色域下的截图表现。
+（唤醒后热键的影子已在 `--power-test` 里守住，剩下"真睡一觉再唤醒"这一步。）
 
 详见 [项目规划方案](docs/whsnap-项目规划方案.md)（§18 为 M6 交付验收记录）。

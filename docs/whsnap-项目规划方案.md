@@ -1,6 +1,6 @@
 # WhSnap — Windows 截图贴图工具 项目规划方案（对标 Snipaste）
 
-> 版本：**v4.6**（执行阶段；**M1 截图核心 / M2 贴图 / M3 快捷键与全配置化 / M4 全量标注 / M5 对标收尾 / M6 发布工程化均已完成** —— 交付版本 `v1.0.0-preview.1`，验收见 §14～§18；未验证项见 §18 末尾）
+> 版本：**v4.7**（执行阶段；**M1 截图核心 / M2 贴图 / M3 快捷键与全配置化 / M4 全量标注 / M5 对标收尾 / M6 发布工程化均已完成** —— 交付版本 `v1.0.0-preview.1`，验收见 §14～§18；未验证项见 §18 末尾。v4.7 追加：自签名签名链路接入构建与 CI、`--power-test` 唤醒后热键自检）
 > 定位：Windows 平台对标 Snipaste 的「截图 + 贴图」工具
 > 团队：**1 人全职** | 主用系统：**Windows 11** | 分发：**仅安装包**（无便携版）
 > 发布对象：**自己 + 小圈子**（非公开分发）
@@ -558,15 +558,22 @@ powershell -File build/tools/build-installer.ps1 -Version 0.1.0
 - ✅ 性能埋点（§2.2 四项指标全部实测达标，样本落盘、`--selftest` 与诊断包都带）
 - ✅ 安装包完善（升级就地、安装日志、卸载询问保留配置与 `/DELUSERDATA`、手册入包与开始菜单）
 - ✅ 用户手册（含机器校验的覆盖率）+ `update.json` 生成与 CI 资产上传（CI 真跑待推远端）
+- ✅ **自签名签名链路**（v4.7）：`build-installer.ps1 -Sign` **先签 payload 再 ISCC**（否则装到磁盘的 `WhSnap.exe`
+  仍是未签名）、后签 setup exe、导出公开 `.cer`（`install-trust.ps1` 要用），`update.json` 最后生成、哈希取自签名后的文件
+- ✅ **`--power-test`**（v4.7）：唤醒后热键重注册（风险 R4）从"待实机"变成 8 项机器断言
 - 交付验收明细见 **§18**
 
 ### 待办（按建议顺序）
 
-1. **推远端并跑一次 CI**：`git remote add origin https://github.com/wh23423/WhSnap.git` → 推 tag →
-   确认 Actions 产出四类资产（这是唯一还没验证过的环节）。
+1. **推远端并跑一次 CI**（唯一还没验证过的环节）：`git remote add origin https://github.com/wh23423/WhSnap.git` →
+   推 tag → 确认 Actions 产出 安装包 / `update.json` / `install-trust.ps1` / `WhSnap.cer` 四类资产。
+   若配上 `SIGNING_PFX_BASE64` / `SIGNING_PFX_PASSWORD` 两个 secret，CI 出的就是**已签名**包
+   （同一条 base64 分支已在本机跑通，见 §18）。
 2. **真实双屏回归**：在双显示器（尤其混合缩放比）机器上实跑一次，重点验证"鼠标捕获跨屏移交"与竖屏旋转。
-3. 真机验证休眠唤醒后热键自动重注册、以及 HDR 屏下的截图表现。
-4. （可选）生成自签名证书并接入 CI secret，让 preview 包带签名。
+3. **真机睡眠/唤醒 + HDR**：唤醒后热键重注册已由 `--power-test` 机器验证，剩下"真睡一觉再唤醒"这一步；
+   HDR 屏下实看截图是否偏灰。
+4. ~~（可选）生成自签名证书并接入 CI secret~~ ✅ 已完成：证书在 `artifacts\signing\`（本机、不入库），
+   签名已接入构建脚本与 CI 工作流，Secret 内容已备好（见 §18）。
 
 ---
 
@@ -650,11 +657,14 @@ powershell -File build/tools/build-installer.ps1 -Version 0.1.0
 |---|---|
 | 构建 | `WhSnap.sln` Release，**0 警告 0 错误** |
 | 单元测试 | **296/296 通过** |
-| 9 个自检命令 | `--selftest` / `--overlay-test` / `--pin-test` / `--settings-test` / `--annotate-test` / `--element-test` / `--update-test` / `--crash-test` / `--diagnostics-pack` **全部 exit 0** |
+| 10 个自检命令 | `--selftest` / `--overlay-test` / `--pin-test` / `--settings-test` / `--annotate-test` / `--element-test` / `--update-test` / `--crash-test` / `--power-test` / `--diagnostics-pack` **全部 exit 0** |
 | `--selftest` | **20 项 PASS / 0 FAIL / 0 SKIP**（含更新链路、崩溃证据、诊断包、性能埋点四项） |
 | `--settings-test` | **11 项 PASS**（维护页版本号、更新入口、诊断包入口与失败提示都覆盖） |
 | `--update-test` | **11 项 + 发布清单验证**（字段完整、体积与 SHA-256 一致、经更新服务真的下载校验） |
 | `--crash-test` | **5 项**（加 `--with-dump` 为 6 项，真实 minidump 550 KB、`MDMP` 头正确、写完即删） |
+| **`--power-test`（v4.7）** | **8 项 PASS / 0 FAIL**：自检键位开始前空闲 → 注册后 L1 探针拿到 Win32 1409 → `PBT_APMRESUMEAUTOMATIC` 触发重注册（事件 + 日志证据）→ **重注册后热键仍被本进程持有** → `WM_HOTKEY` 仍派发到正确动作 → `PBT_APMRESUMESUSPEND` 同样触发、`PBT_APMSUSPEND` 不触发 → 释放后归还系统。**变异测试**：把重注册改成"只注销不重注册"后该自检报 2 项失败、exit 1（不是永远绿的摆设） |
+| **代码签名（v4.7）** | `make-cert.ps1` 生成 `CN=WhSnap`（5 年、RSA3072、SHA256）；`build-installer.ps1 -Sign` 先签 payload 再 ISCC、后签 setup、导出 `WhSnap.cer`，`update.json` 哈希取自签名后文件。**实测**：装到磁盘的 `WhSnap.exe` 与 setup 都是 `CN=WhSnap` 签名 + RFC3161 时间戳（DigiCert），导入信任后 `Get-AuthenticodeSignature` = `Valid`；未导入时是 `UnknownError`（自签名根未受信任，原文见 §18 备注）。CI 用的 `-PfxBase64` 分支也在本机跑通（解码 → 签名 → 导出 `.cer` → 删除临时 pfx） |
+| **签名版安装三连测（v4.7）** | 静默安装 exit 0（`WhSnap.exe` 版本 `1.0.0-preview.1+…`、手册 23 KB 入包、Run/卸载项/开始菜单三项齐全）→ **装机后 `--selftest` 20 PASS / 0 FAIL、exit 0** → 静默卸载 exit 0（安装目录、开始菜单、Run、卸载项全清）→ `settings.json` 哈希前后一致（用户数据保留）。结论 PASS |
 | 手册覆盖率 | `check-manual-coverage.ps1` exit 0：**47/47 配置项标签 + 44/44 动作名**都写进了用户手册 |
 | §2.2 性能指标 | 热键→遮罩 **192.5 ms**（≤200）· 鼠标跟随中位 **0.06 ms**/最大 11.0 ms（≤16）· 4K 确认→剪贴板 **234 ms**（≤400）· 冷启动→托盘 **322.6 ms**（≤1.5 s）—— **四项全部达标** |
 | 常驻内存 | 44 MB（无贴图）/ 53 MB（30 张贴图），门槛 120 / 250 MB ✅ |
@@ -667,11 +677,19 @@ powershell -File build/tools/build-installer.ps1 -Version 0.1.0
 
 **未验证（诚实列出）**：
 
-1. **CI 从未运行过**：仓库没有远端、没有 tag，`release.yml` 只做了 YAML 解析与步骤核对；
-   推远端打 tag 后应产出 安装包 + `update.json` + `install-trust.ps1` + `WhSnap.cer` 四类 Release 资产。
+1. **CI 从未运行过**：仓库没有远端、没有 tag，`release.yml` 只做到 YAML 解析（PyYAML）+ 11 个步骤逐项核对，
+   外加本机把它调用的那条 `-PfxBase64` 分支跑通；推远端打 tag 后应产出
+   安装包 + `update.json` + `install-trust.ps1` + `WhSnap.cer` 四类 Release 资产。
 2. **真实双屏 / 混合缩放比回归**：从 M1 起只在合成拓扑上验证过，需真机（重点：鼠标捕获跨屏移交、竖屏旋转）。
 3. **HDR / 宽色域**：WGC/DXGI 只处理 BGRA8，10-bit 会自动降级 GDI；有 HDR 屏时需实看是否偏灰。
-4. **休眠唤醒后热键**：代码已监听 `WM_POWERBROADCAST` 自动重注册，待真机确认。
+4. **真机睡眠 / 唤醒**：唤醒后热键重注册的代码路径已由 `--power-test` 机器验证（8 项 + 变异测试），
+   但自检是把电源消息**直接投递给程序自己的消息窗口**（不是真睡），"真睡一觉再唤醒"仍建议人工确认一次。
+
+**备注：签名状态怎么判读**（避免把正常的自签名状态当故障）——在没导入信任的机器上，
+`Get-AuthenticodeSignature` 会报 `UnknownError` + "A certificate chain processed, but terminated in a root
+certificate which is not trusted by the trust provider"：这是**预期的**（签名本身有效，只是根不受信），
+跑一次 `install-trust.ps1` 导入 `WhSnap.cer` 后即变 `Valid`；
+真正该当故障处理的是 `HashMismatch`（签完被改过）与 `NotSigned`（根本没签上）。
 
 ---
 

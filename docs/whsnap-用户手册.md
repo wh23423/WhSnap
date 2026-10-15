@@ -43,22 +43,25 @@
 
 ### 1.3 SmartScreen 提示「Windows 已保护你的电脑」
 
-这是 Windows 对**未购买代码签名证书**的程序的一贯提示，不是"发现病毒"。当前 preview 包是自签名（甚至未签名），所以：
+这是 Windows 对**未购买代码签名证书**的程序的一贯提示，不是"发现病毒"。当前 preview 包用的是**自签名**证书
+（如果构建时没配签名 secret，就是完全未签名），所以：
 
 1. 点提示里的 **更多信息**；
 2. 点 **仍要运行**。
 
 如果连"更多信息"都没有（策略更严的机器），右键安装包 → 属性 → 勾选 **解除锁定** → 确定，再运行。
 
-### 1.4 （可选）导入信任，让发布者显示为 wh23423
+### 1.4 （可选）导入信任，让发布者显示为 WhSnap
 
-每台机器做一次，需要管理员权限（只影响"发布者是谁"的显示，不会让杀软误报消失）：
+每台机器做一次，需要管理员权限（只影响"发布者是谁"的显示，不会让杀软误报消失）。
+`WhSnap.cer` 与 `install-trust.ps1` 都在发布页的同一批下载里：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File install-trust.ps1 -CerPath .\WhSnap.cer
 ```
 
-导入后安装包属性页会显示发布者名称，也不再提示「未知发布者」。
+导入后安装包属性页会显示发布者名称（`CN=WhSnap`），也不再提示「未知发布者」。
+注意：**卸载程序 `unins000.exe` 是安装时现场生成的，没有签名**（卸载时可能仍显示「未知发布者」，属正常）。
 
 ### 1.5 升级
 
@@ -449,6 +452,7 @@ powershell -ExecutionPolicy Bypass -File install-trust.ps1 -CerPath .\WhSnap.cer
 | `--diagnostics-pack [--out <目录>]` | 命令行导出诊断包（界面起不来时用） |
 | `--update-test` | 更新链路自检（本地传输，不需要联网） |
 | `--crash-test [--with-dump]` | 崩溃证据自检；`--with-dump` 会真写一份 minidump 校验后删除 |
+| `--power-test` | 睡眠/唤醒后热键重注册自检（8 项：重注册后热键仍生效、按键仍能派发…），报告 `%TEMP%\whsnap-power-test.txt` |
 | `--capture-to <png> [--backend wgc\|dxgi\|gdi]` | 单后端抓一张图并输出诊断 |
 | `--overlay-test` / `--pin-test` / `--settings-test` / `--annotate-test` / `--element-test` | 各子系统无界面自检 |
 
