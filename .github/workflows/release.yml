@@ -56,13 +56,25 @@ jobs:
         run: |
           # Tag builds point the manifest at that tag's release asset URL; manual runs
           # keep the local path (the manifest is still useful for offline checks).
+          $buildArgs = @('-Version', '${{ steps.version.outputs.version }}')
           if ('${{ github.ref_type }}' -eq 'tag') {
             $base = '${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}'
-            ./build/tools/build-installer.ps1 -Version '${{ steps.version.outputs.version }}' -ReleaseBaseUrl $base
+            $buildArgs += @('-ReleaseBaseUrl', $base)
+          }
+
+          # Signing is opt-in via secrets. build-installer.ps1 signs the payload BEFORE
+          # ISCC (so the installed WhSnap.exe is signed too), signs the setup exe after,
+          # exports the public .cer for install-trust.ps1, and only then writes update.json
+          # so the manifest hashes the SIGNED installer.
+          if ($env:SIGNING_PFX_BASE64) {
+            Write-Host 'Signing enabled (SIGNING_PFX_BASE64 is set).'
+            $buildArgs += @('-Sign', '-PfxBase64', $env:SIGNING_PFX_BASE64, '-PfxPassword', $env:SIGNING_PFX_PASSWORD)
           }
           else {
-            ./build/tools/build-installer.ps1 -Version '${{ steps.version.outputs.version }}'
+            Write-Host 'Signing secrets are not configured; building an unsigned preview.'
           }
+
+          ./build/tools/build-installer.ps1 @buildArgs
 
       - name: Smoke test (non-blocking, needs a desktop session)
         continue-on-error: true
@@ -70,10 +82,12 @@ jobs:
         run: |
           # WinExe: must use Start-Process -Wait, otherwise PowerShell does not wait and
           # the report file below would still be the previous run's.
-          $p = Start-Process -FilePath artifacts/publish/WhSnap.exe -ArgumentList '--selftest' -Wait -PassThru
-          Write-Host "selftest exit code: $($p.ExitCode)"
-          $report = Join-Path $env:TEMP 'whsnap-selftest.txt'
-          if (Test-Path $report) { Get-Content $report -Encoding UTF8 }
+          foreach ($check in '--selftest', '--power-test') {
+            $p = Start-Process -FilePath artifacts/publish/WhSnap.exe -ArgumentList $check -Wait -PassThru
+            Write-Host "$check exit code: $($p.ExitCode)"
+            $report = Join-Path $env:TEMP ("whsnap{0}.txt" -f $check.Replace('--', '-'))
+            if (Test-Path $report) { Get-Content $report -Encoding UTF8 }
+          }
 
       - name: Verify update.json
         shell: pwsh
@@ -84,13 +98,6 @@ jobs:
           $report = Join-Path $env:TEMP 'whsnap-update-test.txt'
           if (Test-Path $report) { Get-Content $report -Encoding UTF8 | Select-Object -Last 12 }
           if ($p.ExitCode -ne 0) { throw "update.json verification failed (exit $($p.ExitCode))." }
-
-      - name: Sign installer (only when signing secrets are configured)
-        if: env.SIGNING_PFX_BASE64 != ''
-        shell: pwsh
-        run: |
-          $installer = (Get-ChildItem artifacts/installer/*.exe | Select-Object -First 1).FullName
-          ./build/tools/sign.ps1 -Path $installer -PfxBase64 $env:SIGNING_PFX_BASE64 -PfxPassword $env:SIGNING_PFX_PASSWORD
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
@@ -126,11 +133,12 @@ jobs:
             程序启动后会自动读它；`WhSnap.exe --update-test` 可离线验证这条链路。
 
             ## 关于「未知发布者」提示
-            本版本使用自签名证书。若出现发布者未知的提示，可运行包内的
+            本版本使用自签名证书（发布页同时提供 `WhSnap.cer`）。若出现发布者未知的提示，可运行随附的
             `install-trust.ps1`（需管理员）一次性导入信任，之后不再提示。
             详细说明见仓库 README 的「分发」一节。
 
             ## 已知限制（预览版）
-            - 遮罩只覆盖鼠标所在的那一台显示器，跨屏选择尚未支持
-            - 采集使用 GDI BitBlt：HDR 与部分硬件叠加层内容可能不准确
-            - 尚无标注、贴图、取色器、元素检测（按里程碑推进中）
+            - 真实双屏（尤其混合缩放比）的鼠标捕获跨屏移交尚未在双屏机上回归，目前只有合成拓扑自检
+            - HDR / 宽色域：WGC 与 DXGI 只处理 BGRA8，遇到 10-bit 或浮点格式会自动降级到 GDI
+            - 卸载程序 `unins000.exe` 由安装器现场生成、没有签名，卸载时可能仍显示「未知发布者」
+            - 低级键盘钩子降级路径（`WH_KEYBOARD_LL`）尚未提供：某个键被系统占用时只能改键

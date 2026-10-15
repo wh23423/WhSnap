@@ -97,6 +97,11 @@ internal static partial class NativeMethods
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
+    // --power-test 要把 WM_POWERBROADCAST / WM_HOTKEY 投递给热键消息窗口，
+    // 走的就是系统投递时同一个窗口过程（不改变消息语义，只是不用真的把机器睡下去）。
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
     [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
     public static extern IntPtr CreateDC(string? pwszDriver, string? pwszDevice, string? pszPort, IntPtr pdm);
 

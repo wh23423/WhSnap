@@ -13,12 +13,22 @@
          installer's SHA-256 and size; -ReleaseBaseUrl turns the URL into the release
          asset URL, without it the local absolute path is used (offline distribution)
 
+    With -Sign (see build/tools/make-cert.ps1) the build signs
+      * artifacts/publish/WhSnap.exe BEFORE ISCC, so the payload the installer drops
+        on disk is signed too (otherwise only the setup exe would carry a signature),
+      * the setup exe AFTER ISCC,
+      * and exports the public .cer next to the build output, because the GitHub
+        Release ships install-trust.ps1 and recipients need that .cer to run it.
+    update.json is written last on purpose: its SHA-256 must describe the SIGNED
+    installer, not the unsigned one.
+
     ASCII-only on purpose: Windows PowerShell 5.1 reads .ps1 files without a BOM as ANSI.
 
 .EXAMPLE
     powershell -File build/tools/build-installer.ps1
     powershell -File build/tools/build-installer.ps1 -SkipPublish     # reuse last publish
     powershell -File build/tools/build-installer.ps1 -Version 1.0.0 -ReleaseBaseUrl https://github.com/wh23423/WhSnap/releases/download/v1.0.0
+    powershell -File build/tools/build-installer.ps1 -Version 1.0.0-preview.1 -Sign -PfxFile artifacts\signing\WhSnap.pfx -PfxPassword <pwd>
 #>
 [CmdletBinding()]
 param(
@@ -27,6 +37,14 @@ param(
     [string]$Version = '0.1.0',
     [switch]$SkipPublish,
     [string]$IsccPath,
+    # code signing (optional; certificate from build/tools/make-cert.ps1)
+    [switch]$Sign,
+    [string]$PfxFile,
+    [string]$PfxBase64,
+    [string]$PfxPassword,
+    [string]$Thumbprint,
+    [string]$CerOut,
+    [string]$TimestampUrl,
     # self-update manifest (update.json)
     [string]$Channel,
     [string]$ReleaseBaseUrl,
@@ -47,6 +65,36 @@ function Write-Step([string]$text) {
     Write-Host "==> $text" -ForegroundColor Cyan
 }
 
+# --- 0) signing setup ---------------------------------------------------------
+if ($Sign) {
+    if (-not ($PfxFile -or $PfxBase64 -or $Thumbprint)) {
+        throw '-Sign needs a certificate: pass -PfxFile, -PfxBase64 or -Thumbprint.'
+    }
+
+    if (-not $CerOut) { $CerOut = Join-Path $repoRoot 'artifacts\signing\WhSnap.cer' }
+}
+
+function Invoke-WhSnapSigning {
+    param(
+        [string[]]$Files,
+        [string]$CerOutPath,
+        [string]$Label
+    )
+
+    Write-Step ("Signing $Label")
+    $signScript = Join-Path $PSScriptRoot 'sign.ps1'
+    $signParams = @{ Path = $Files }
+    if ($PfxFile) { $signParams.PfxFile = $PfxFile }
+    if ($PfxBase64) { $signParams.PfxBase64 = $PfxBase64 }
+    if ($PfxPassword) { $signParams.PfxPassword = $PfxPassword }
+    if ($Thumbprint) { $signParams.Thumbprint = $Thumbprint }
+    if ($TimestampUrl) { $signParams.TimestampUrl = $TimestampUrl }
+    if ($CerOutPath) { $signParams.CerOut = $CerOutPath }
+
+    # In-process call: sign.ps1 runs with ErrorActionPreference=Stop and throws on failure.
+    & $signScript @signParams
+}
+
 # --- 1) publish ---------------------------------------------------------------
 if (-not $SkipPublish) {
     Write-Step "Publishing $Configuration / $Runtime (self-contained)"
@@ -65,6 +113,13 @@ if (-not (Test-Path $exe)) { throw "WhSnap.exe not found in $publishDir." }
 Write-Host ("    payload: {0} files, {1:N1} MB" -f `
     (Get-ChildItem $publishDir -Recurse -File).Count, `
     ((Get-ChildItem $publishDir -Recurse -File | Measure-Object -Property Length -Sum).Sum / 1MB))
+
+# --- 1b) sign the payload BEFORE ISCC ---------------------------------------
+# The installer embeds these files verbatim, so signing after ISCC would leave the
+# installed WhSnap.exe unsigned (only the setup exe would carry a signature).
+if ($Sign) {
+    Invoke-WhSnapSigning -Files @($exe) -Label 'application payload (pre-pack)'
+}
 
 # --- 2) make sure the .iss is UTF-8 with BOM ---------------------------------
 Write-Step 'Ensuring WhSnap.iss is UTF-8 with BOM'
@@ -128,11 +183,22 @@ else {
     Write-Host ("    user manual not found ({0}); installer will skip it" -f $manualName) -ForegroundColor Yellow
 }
 
-# 先清掉上一次的安装包：artifacts/installer 里混着旧版本时，分发很容易拿错文件
+# Clear the previous installer first: leaving old versions in artifacts/installer is the
+# fastest way to hand out the wrong file.
 Get-ChildItem $installerDir -Filter '*.exe' -ErrorAction SilentlyContinue | Remove-Item -Force
 
 & $IsccPath "/DMyAppVersion=$Version" $issFile
 if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE." }
+
+# --- 3b) sign the setup exe (and ship the public .cer) -----------------------
+# Must happen before update.json: the manifest hashes the file that users download.
+if ($Sign) {
+    # NOTE: @() -- a single match would otherwise be returned bare and .FullName would be null.
+    $unsigned = @(Get-ChildItem $installerDir -Filter '*.exe' -ErrorAction SilentlyContinue) | Select-Object -First 1
+    if (-not $unsigned) { throw "installer exe not found in $installerDir." }
+
+    Invoke-WhSnapSigning -Files @($unsigned.FullName) -CerOutPath $CerOut -Label 'installer (setup exe + public .cer)'
+}
 
 # --- 4) self-update manifest (update.json) -----------------------------------
 Write-Step 'Generating update.json'
@@ -176,4 +242,9 @@ Get-ChildItem $installerDir -Filter '*.exe' | ForEach-Object {
 }
 Get-ChildItem $installerDir -Filter 'update.json' | ForEach-Object {
     Write-Host ("    {0}  ({1:N0} bytes)" -f $_.Name, $_.Length)
+}
+if ($Sign -and $CerOut -and (Test-Path -LiteralPath $CerOut)) {
+    Get-Item -LiteralPath $CerOut | ForEach-Object {
+        Write-Host ("    {0}  ({1:N0} bytes, ship this so install-trust.ps1 can be run)" -f $_.Name, $_.Length)
+    }
 }

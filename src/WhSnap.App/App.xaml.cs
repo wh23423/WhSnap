@@ -91,6 +91,14 @@ public partial class App : System.Windows.Application
             return;
         }
 
+        if (e.Args.Any(a => a.Equals("--power-test", StringComparison.OrdinalIgnoreCase)))
+        {
+            // 风险 R4：唤醒后热键静默失效。这个自检把电源恢复消息投递给热键消息窗口，
+            // 断言重注册后热键仍由本进程持有、按键仍能派发到动作。
+            Shutdown(Diagnostics.PowerTestCommand.Run());
+            return;
+        }
+
         if (TryGetArgument(e.Args, "--capture-to", out string? capturePath) && !string.IsNullOrWhiteSpace(capturePath))
         {
             TryGetArgument(e.Args, "--backend", out string? backendName);

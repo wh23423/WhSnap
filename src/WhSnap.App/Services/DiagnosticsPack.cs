@@ -177,7 +177,7 @@ internal static class DiagnosticsPack
         builder.AppendLine("  monitors.txt      显示器拓扑（物理矩形、DPI、缩放、主屏）");
         builder.AppendLine("  hotkeys.txt       当前生效的热键表");
         builder.AppendLine("  settings.json     当前配置");
-        builder.AppendLine("  performance.txt   性能埋点报告（尚未实现时是占位说明）");
+        builder.AppendLine("  performance.txt   性能埋点报告（四项指标的实测值与门槛）");
         builder.AppendLine("  crashes.txt       崩溃清单 + 最近一次崩溃的摘要");
         builder.AppendLine("  crashes/          每份崩溃报告的原文");
         builder.AppendLine("  logs/             最新一份日志（已截断）");

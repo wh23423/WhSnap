@@ -82,6 +82,15 @@ internal sealed class HotkeyManager : IDisposable
 
     public int RegisteredCount => _results.Values.Count(result => result.IsActive);
 
+    /// <summary>
+    /// 热键消息窗口句柄（尚未建窗时为 <see cref="IntPtr.Zero"/>）。
+    /// 自检（<c>--power-test</c>）用它把电源/热键消息投递给这里，走与系统相同的窗口过程。
+    /// </summary>
+    internal IntPtr MessageWindowHandle => _source?.Handle ?? IntPtr.Zero;
+
+    /// <summary>当前已注册的「热键 id → 动作 id」映射（自检与诊断用，只读视图）。</summary>
+    internal IReadOnlyDictionary<int, string> RegisteredIds => _idToAction;
+
     /// <summary>按绑定表重新注册全部全局热键。返回每个动作的结果。</summary>
     public IReadOnlyList<HotkeyRegistrationResult> ApplyAll(IReadOnlyList<HotkeyBinding> bindings)
     {
