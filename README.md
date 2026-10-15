@@ -3,6 +3,8 @@
 对标 Snipaste 的 Windows 截图 / 贴图工具。当前处于 **预览版（0.5.0-preview）**，按里程碑逐步推进。
 
 - 项目规划方案：[docs/whsnap-项目规划方案.md](docs/whsnap-项目规划方案.md)
+- 进度与交接：[docs/进度快照.md](docs/进度快照.md)（做到哪一步、下一步做什么、怎么验证）
+- 设计取舍记录：[docs/adr/](docs/adr/README.md) · 延后项：[docs/backlog.md](docs/backlog.md)
 - 目标系统：Windows 11（主）／Windows 10 21H2+（尽力兼容）
 - 分发：仅安装包（Inno Setup，per-user），通过 GitHub Releases 发布
 
