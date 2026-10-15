@@ -56,10 +56,15 @@ jobs:
         run: |
           # Tag builds point the manifest at that tag's release asset URL; manual runs
           # keep the local path (the manifest is still useful for offline checks).
-          $buildArgs = @('-Version', '${{ steps.version.outputs.version }}')
+          # Hashtable splatting: explicit named binding, identical on Windows
+          # PowerShell 5.1 and pwsh 7. Array splatting of string literals is NOT
+          # reliable here -- on pwsh 7 the '-Name' entries collapsed into the first
+          # positional parameter, so -Version got bound to -Configuration and the
+          # version string reached dotnet publish as a RuntimeIdentifier (NETSDK1083).
+          $buildArgs = @{ Version = '${{ steps.version.outputs.version }}' }
           if ('${{ github.ref_type }}' -eq 'tag') {
             $base = '${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}'
-            $buildArgs += @('-ReleaseBaseUrl', $base)
+            $buildArgs.ReleaseBaseUrl = $base
           }
 
           # Signing is opt-in via secrets. build-installer.ps1 signs the payload BEFORE
@@ -68,7 +73,9 @@ jobs:
           # so the manifest hashes the SIGNED installer.
           if ($env:SIGNING_PFX_BASE64) {
             Write-Host 'Signing enabled (SIGNING_PFX_BASE64 is set).'
-            $buildArgs += @('-Sign', '-PfxBase64', $env:SIGNING_PFX_BASE64, '-PfxPassword', $env:SIGNING_PFX_PASSWORD)
+            $buildArgs.Sign = $true
+            $buildArgs.PfxBase64 = $env:SIGNING_PFX_BASE64
+            $buildArgs.PfxPassword = $env:SIGNING_PFX_PASSWORD
           }
           else {
             Write-Host 'Signing secrets are not configured; building an unsigned preview.'
