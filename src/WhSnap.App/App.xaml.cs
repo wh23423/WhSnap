@@ -27,6 +27,13 @@ public partial class App : System.Windows.Application
             return;
         }
 
+        if (TryGetArgument(e.Args, "--capture-to", out string? capturePath) && !string.IsNullOrWhiteSpace(capturePath))
+        {
+            TryGetArgument(e.Args, "--backend", out string? backendName);
+            Shutdown(Diagnostics.CaptureCommand.Run(capturePath, backendName));
+            return;
+        }
+
         // 名称必须与安装包 WhSnap.iss 的 AppMutex 一致，安装器才能检测到正在运行的实例
         _instanceMutex = new Mutex(true, "WhSnap_SingleInstance", out bool isFirstInstance);
         if (!isFirstInstance)
@@ -208,5 +215,22 @@ public partial class App : System.Windows.Application
     {
         Log.Info("用户从托盘菜单退出。");
         Shutdown(0);
+    }
+
+    /// <summary>读取 "--name value" 形式的命令行参数。</summary>
+    private static bool TryGetArgument(string[] args, string name, out string? value)
+    {
+        value = null;
+
+        for (int i = 0; i < args.Length - 1; i++)
+        {
+            if (args[i].Equals(name, StringComparison.OrdinalIgnoreCase))
+            {
+                value = args[i + 1];
+                return true;
+            }
+        }
+
+        return false;
     }
 }

@@ -9,6 +9,9 @@ public sealed record MonitorInfo(
     uint DpiY,
     bool IsPrimary)
 {
+    /// <summary>HMONITOR 句柄。Windows.Graphics.Capture 按显示器创建采集项时必需。</summary>
+    public nint Handle { get; init; }
+
     public double ScaleX => DpiX / 96.0;
 
     public double ScaleY => DpiY / 96.0;

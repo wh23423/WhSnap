@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media.Imaging;
@@ -7,30 +8,32 @@ using static WhSnap.Interop.NativeMethods;
 
 namespace WhSnap.Capture;
 
-/// <summary>一次冻结的屏幕内容：整张虚拟桌面位图 + 拓扑信息。</summary>
-internal sealed record CaptureFrame(BitmapSource Image, PhysicalRect VirtualBounds, IReadOnlyList<MonitorInfo> Monitors);
-
 /// <summary>
-/// 预览版采集后端：GDI BitBlt（CAPTUREBLT）。
-/// 优点：零依赖、兼容性最好、能立刻跑通。
-/// 已知局限（规划中已列）：抓不到部分硬件叠加层内容、HDR 下颜色可能不准、帧率较低。
-/// 后续由 IScreenCapture 抽象替换为 WGC / DXGI 后端（M1）。
+/// GDI BitBlt + CAPTUREBLT 采集后端。
+/// 定位：最后的兜底。优点零依赖、一次性拿到整张虚拟桌面、旋转屏/宽色域都由系统合成为 SDR 位图；
+/// 缺点抓不到部分硬件叠加层、帧率低。
 /// </summary>
-internal static class GdiScreenCapture
+internal sealed class GdiScreenCapture : IScreenCapture
 {
-    public static CaptureFrame CaptureFrozen()
+    public string Name => CaptureBackendNames.Gdi;
+
+    public CaptureFrame Capture()
     {
-        int x = GetSystemMetrics(SM_XVIRTUALSCREEN);
-        int y = GetSystemMetrics(SM_YVIRTUALSCREEN);
-        int width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-        int height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+        var stopwatch = Stopwatch.StartNew();
+        var monitors = MonitorEnumerator.Enumerate();
+        var bounds = VirtualDesktop.BoundsOf(monitors);
+        var notes = new List<string>();
 
-        if (width <= 0 || height <= 0)
+        // 与 GetSystemMetrics 交叉校验：两者不一致说明拓扑正在变化
+        int systemX = GetSystemMetrics(SM_XVIRTUALSCREEN);
+        int systemY = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        int systemWidth = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+        int systemHeight = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+
+        if (systemWidth != bounds.Width || systemHeight != bounds.Height || systemX != bounds.X || systemY != bounds.Y)
         {
-            throw new InvalidOperationException($"虚拟桌面尺寸无效：{width}x{height}。");
+            notes.Add($"显示器枚举结果 {bounds} 与系统虚拟桌面 {systemX},{systemY} {systemWidth}x{systemHeight} 不一致（拓扑可能刚变化）");
         }
-
-        var virtualBounds = new PhysicalRect(x, y, width, height);
 
         IntPtr screenDc = IntPtr.Zero;
         IntPtr memoryDc = IntPtr.Zero;
@@ -46,7 +49,7 @@ internal static class GdiScreenCapture
             }
 
             memoryDc = CreateCompatibleDC(screenDc);
-            bitmap = CreateCompatibleBitmap(screenDc, width, height);
+            bitmap = CreateCompatibleBitmap(screenDc, bounds.Width, bounds.Height);
             if (memoryDc == IntPtr.Zero || bitmap == IntPtr.Zero)
             {
                 throw new InvalidOperationException("创建兼容位图失败。");
@@ -54,10 +57,9 @@ internal static class GdiScreenCapture
 
             previousBitmap = SelectObject(memoryDc, bitmap);
 
-            // CAPTUREBLT 让分层窗口（含部分叠加层）也进入抓取结果
-            if (!BitBlt(memoryDc, 0, 0, width, height, screenDc, x, y, SRCCOPY | (int)CAPTUREBLT))
+            if (!BitBlt(memoryDc, 0, 0, bounds.Width, bounds.Height, screenDc, bounds.X, bounds.Y, SRCCOPY | (int)CAPTUREBLT))
             {
-                throw new InvalidOperationException("BitBlt 抓屏失败。");
+                throw new InvalidOperationException($"BitBlt 抓屏失败（Win32 {System.Runtime.InteropServices.Marshal.GetLastWin32Error()}）。");
             }
 
             var source = Imaging.CreateBitmapSourceFromHBitmap(
@@ -69,7 +71,15 @@ internal static class GdiScreenCapture
             // Clone 得到独立像素副本，之后才能真正释放 HBITMAP
             var frozen = source.Clone();
             frozen.Freeze();
-            return new CaptureFrame(frozen, virtualBounds, MonitorEnumerator.Enumerate());
+
+            return new CaptureFrame(
+                frozen,
+                bounds,
+                monitors,
+                Name,
+                stopwatch.Elapsed,
+                ProtectedContentMasked: false,
+                Notes: notes.Count == 0 ? null : string.Join("；", notes));
         }
         finally
         {

@@ -38,7 +38,10 @@ internal static class MonitorEnumerator
                     WorkArea: new PhysicalRect(info.rcWork.Left, info.rcWork.Top, info.rcWork.Width, info.rcWork.Height),
                     DpiX: dpiX,
                     DpiY: dpiY,
-                    IsPrimary: (info.dwFlags & MONITORINFOF_PRIMARY) != 0));
+                    IsPrimary: (info.dwFlags & MONITORINFOF_PRIMARY) != 0)
+                {
+                    Handle = hMonitor,
+                });
             }
 
             return true;

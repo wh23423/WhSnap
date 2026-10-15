@@ -43,12 +43,13 @@ internal static class SelfTestRunner
             }
         }
 
-        Check("屏幕采集（GDI BitBlt）", () =>
+        Check("屏幕采集 + 自动降级链（auto）", () =>
         {
-            var frame = GdiScreenCapture.CaptureFrozen();
-            if (frame.Image.PixelWidth <= 0 || frame.Image.PixelHeight <= 0)
+            var frame = ScreenCaptureFactory.Capture(CaptureBackend.Auto, out var attempts);
+
+            if (frame.Image.PixelWidth != frame.VirtualBounds.Width || frame.Image.PixelHeight != frame.VirtualBounds.Height)
             {
-                throw new InvalidOperationException("抓到的位图尺寸为 0。");
+                throw new InvalidOperationException($"位图尺寸 {frame.Image.PixelWidth}x{frame.Image.PixelHeight} 与虚拟桌面 {frame.VirtualBounds} 不一致。");
             }
 
             string path = Path.Combine(Path.GetTempPath(), "whsnap-selftest-capture.png");
@@ -65,7 +66,12 @@ internal static class SelfTestRunner
                 throw new InvalidOperationException($"抓图落盘仅 {bytes} 字节，疑似黑屏/失败。");
             }
 
-            return $"虚拟桌面 {frame.VirtualBounds}，位图 {frame.Image.PixelWidth}x{frame.Image.PixelHeight}，PNG {bytes / 1024} KB → {path}";
+            if (!FrameSanity.LooksLikeRealContent(frame.Image, out string sanity))
+            {
+                throw new InvalidOperationException($"画面疑似黑帧（{sanity}）。");
+            }
+
+            return $"实际后端 {frame.Backend}，{frame.VirtualBounds}，{frame.Duration.TotalMilliseconds:0} ms，{sanity}，PNG {bytes / 1024} KB；尝试链 {string.Join(" → ", attempts)}";
         });
 
         Check("显示器拓扑与 DPI", () =>
@@ -178,6 +184,43 @@ internal static class SelfTestRunner
             return $"已启用={enabled}，注册表路径一致={consistent}（自启项由安装包默认写入，程序仅在缺失时补写）";
         });
 
+        // 逐后端单独验证：某个后端"这台机器不支持"记为 SKIP，真正出错才算 FAIL
+        foreach (var backend in new[] { CaptureBackend.Dxgi, CaptureBackend.Wgc, CaptureBackend.Gdi })
+        {
+            string backendName = CaptureBackendNames.ToName(backend);
+
+            try
+            {
+                var frame = ScreenCaptureFactory.Create(backend).Capture();
+
+                if (frame.Image.PixelWidth != frame.VirtualBounds.Width || frame.Image.PixelHeight != frame.VirtualBounds.Height)
+                {
+                    throw new InvalidOperationException($"位图尺寸 {frame.Image.PixelWidth}x{frame.Image.PixelHeight} 与虚拟桌面 {frame.VirtualBounds} 不一致。");
+                }
+
+                if (!FrameSanity.LooksLikeRealContent(frame.Image, out string sanity))
+                {
+                    throw new InvalidOperationException($"画面疑似黑帧（{sanity}）。");
+                }
+
+                report.AppendLine($"[PASS] 采集后端 {backendName}：{frame.VirtualBounds}，{frame.Duration.TotalMilliseconds:0} ms，{sanity}");
+
+                if (!string.IsNullOrWhiteSpace(frame.Notes))
+                {
+                    report.AppendLine($"       说明：{frame.Notes}");
+                }
+            }
+            catch (CaptureNotSupportedException ex)
+            {
+                report.AppendLine($"[SKIP] 采集后端 {backendName}：{ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"采集后端 {backendName}");
+                report.AppendLine($"[FAIL] 采集后端 {backendName}：{ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
         report.AppendLine(new string('-', 68));
         report.AppendLine(failures.Count == 0
             ? "结论：全部通过。"
@@ -220,4 +263,6 @@ internal static class SelfTestRunner
             // 无控制台可用时依赖报告文件
         }
     }
+
+    /// <summary>页面内容统计已抽到 <see cref="FrameSanity"/>，自检与采集后端共用同一判据。</summary>
 }

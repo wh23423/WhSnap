@@ -29,8 +29,11 @@ internal sealed class AppSettings
     /// <summary>遮罩未选中区域的暗度，0-90。</summary>
     public int OverlayDimOpacity { get; set; } = 45;
 
-    /// <summary>预览版固定为 gdi；M1 起支持 wgc / dxgi / auto。</summary>
-    public string CaptureBackend { get; set; } = "gdi";
+    /// <summary>
+    /// 采集后端：auto（WGC → DXGI → GDI 自动降级）/ wgc / dxgi / gdi。
+    /// 默认 auto；某个后端在特定机器上表现异常时可手动固定。
+    /// </summary>
+    public string CaptureBackend { get; set; } = "auto";
 
     [JsonIgnore]
     public static JsonSerializerOptions SerializerOptions { get; } = new()

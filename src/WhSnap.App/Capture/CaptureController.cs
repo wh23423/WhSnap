@@ -28,9 +28,26 @@ internal sealed class CaptureController(SettingsService settings)
 
         try
         {
-            var frame = GdiScreenCapture.CaptureFrozen();
+            var backend = CaptureBackendNames.Parse(_settings.Current.CaptureBackend);
+            var frame = ScreenCaptureFactory.Capture(backend, out var diagnostics);
             var monitor = MonitorEnumerator.GetMonitorAtCursor(frame.Monitors);
-            Log.Info($"冻结屏幕：虚拟桌面 {frame.VirtualBounds}，活动显示器 {monitor}，共 {frame.Monitors.Count} 台");
+
+            Log.Info($"冻结屏幕：后端 {frame.Backend}，虚拟桌面 {frame.VirtualBounds}，活动显示器 {monitor}，共 {frame.Monitors.Count} 台，耗时 {frame.Duration.TotalMilliseconds:0} ms");
+
+            foreach (string line in diagnostics)
+            {
+                Log.Info($"采集尝试：{line}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(frame.Notes))
+            {
+                Log.Info($"采集说明：{frame.Notes}");
+            }
+
+            if (frame.ProtectedContentMasked)
+            {
+                Log.Warn("检测到受保护内容被系统屏蔽，截图可能包含黑块。");
+            }
 
             var overlay = new OverlayWindow(frame, monitor, _settings.Current);
             _overlay = overlay;

@@ -13,6 +13,7 @@
 | 能力 | 状态 |
 |---|---|
 | 全局热键唤起截图（默认 `F1`） | ✅ 预览版可用 |
+| 采集后端：WGC / DXGI / GDI，自动降级 | ✅ 三后端实测通过（见下表） |
 | 冻结屏幕 + 全屏遮罩拖拽选区 | ✅ 预览版可用 |
 | 选区尺寸/坐标提示、Esc / 右键取消 | ✅ 预览版可用 |
 | 复制到剪贴板（DIB + PNG 双格式） | ✅ 预览版可用 |
@@ -21,15 +22,28 @@
 | 开机自启开关（默认开启） | ✅ 预览版可用 |
 | 配置读写（`%APPDATA%\WhSnap\settings.json`） | ✅ 预览版可用 |
 | 热键冲突检测（第一层：系统占用） | ✅ 预览版可用，能识别 Win32 1409 |
+| 多屏遮罩（每显示器一个窗口、跨屏拖拽） | ⏳ M1 进行中 |
+| 放大镜、8 向手柄、方向键像素微调 | ⏳ M1 进行中 |
 | 标注（矩形/箭头/文字/马赛克…） | ⏳ M4 |
 | 贴图（置顶窗口、缩放旋转、穿透…） | ⏳ M2 |
 | 快捷键设置界面（三层冲突检测） | ⏳ M3 |
-| 取色器、元素自动检测、历史回放 | ⏳ M5 |
+
+### 采集后端（`CaptureBackend` 配置项：`auto` / `wgc` / `dxgi` / `gdi`）
+
+默认 `auto`，按 **WGC → DXGI → GDI** 依次尝试，任一后端抛错即自动降级，并把降级过程写进日志。
+
+| 后端 | 实测耗时（2560×1440） | 说明 |
+|---|---|---|
+| `wgc`（Windows.Graphics.Capture） | 66 ms | Win11 首选，能覆盖部分硬件叠加层内容 |
+| `dxgi`（Desktop Duplication） | 42 ms | 同步单帧，最稳；抓不到 DRM 保护内容 |
+| `gdi`（BitBlt） | 27 ms | 兜底；旋转屏与宽色域下由系统合成为 SDR，最不容易出错 |
+
+三个后端都会做**画面合理性校验**：抓到"完全均匀"的图（典型是纯黑帧）会被判为该环境不支持并自动降级，而不是把黑图交给用户。
 
 ### 预览版已知限制
 
-- **遮罩只覆盖鼠标所在的那一台显示器**，跨屏拖拽选择尚未支持（M1 补齐每屏一个遮罩）。
-- 采集后端为 **GDI BitBlt**：HDR 屏幕颜色可能不准、部分硬件叠加层内容抓不到（M1 接入 Windows.Graphics.Capture / DXGI）。
+- **遮罩只覆盖鼠标所在的那一台显示器**，跨屏拖拽选择尚未支持（M1 进行中）。
+- HDR / 宽色域输出：WGC 与 DXGI 只处理 BGRA8，遇到 10-bit 或浮点格式会自动降级到 GDI（GDI 走系统合成，颜色更接近但非原始位深）。
 - 尚无标注与贴图功能；热键只能在 `settings.json` 中改（M3 提供设置界面）。
 - 唤醒后热键自动重注册已按 `WM_POWERBROADCAST` 监听实现，仍待实机验证。
 
@@ -94,7 +108,16 @@ powershell -File build/tools/build-installer.ps1 -Version 0.1.0
 Get-Content "$env:TEMP\whsnap-selftest.txt" -Encoding UTF8
 ```
 
-退出码 `0` 表示全部通过；报告同时写入 `%TEMP%\whsnap-selftest.txt`。
+退出码 `0` 表示全部通过；报告同时写入 `%TEMP%\whsnap-selftest.txt`。自检会逐个验证三个采集后端，并根据画面统计判断是不是黑帧。
+
+### 单后端抓屏诊断
+
+在不确定某个采集后端是否可用时，可以直接抓一张图并把诊断写到同名 `.txt`：
+
+```powershell
+& src\WhSnap.App\bin\Release\net8.0-windows10.0.22000.0\WhSnap.exe --capture-to D:\temp\shot.png --backend dxgi
+Get-Content D:\temp\shot.png.txt
+```
 
 ---
 
