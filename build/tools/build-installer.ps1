@@ -108,6 +108,17 @@ if (-not $IsccPath) {
 Write-Host "    using $IsccPath (version $Version)"
 if (-not (Test-Path $installerDir)) { New-Item -ItemType Directory -Path $installerDir -Force | Out-Null }
 
+# User manual is optional: the .iss includes it (and adds a Start-menu entry) only when
+# the file exists. Build the Chinese file name from code points so this script stays ASCII-only.
+$manualName = 'whsnap-' + [char]0x7528 + [char]0x6237 + [char]0x624B + [char]0x518C + '.md'   # whsnap-<user manual>.md
+$manualPath = Join-Path $repoRoot ('docs\' + $manualName)
+if (Test-Path -LiteralPath $manualPath) {
+    Write-Host ("    user manual: {0} ({1:N0} KB) -> installed into the app dir" -f $manualName, ((Get-Item -LiteralPath $manualPath).Length / 1KB))
+}
+else {
+    Write-Host ("    user manual not found ({0}); installer will skip it" -f $manualName) -ForegroundColor Yellow
+}
+
 # 先清掉上一次的安装包：artifacts/installer 里混着旧版本时，分发很容易拿错文件
 Get-ChildItem $installerDir -Filter '*.exe' -ErrorAction SilentlyContinue | Remove-Item -Force
 
