@@ -426,6 +426,39 @@ Get-Content "$env:TEMP\whsnap-update-test.txt" -Encoding UTF8
 缺失/损坏/非法地址都给出可读失败原因且不抛异常，并用「边抽 Dispatcher 边等」的方式
 证明异步检查没有在 UI 线程上同步阻塞（进度快照 §7 第 7 条那个死锁坑）。
 
+### 崩溃证据与诊断包
+
+**崩溃时会发生什么**：未处理异常（界面异常与域异常）会被记成两份证据，放在
+`%APPDATA%\WhSnap\dumps\`：
+
+- `crash-<时间戳>.txt`：脱敏文本报告（版本、来源、异常类型/消息/堆栈、最近 40 行日志）；
+- `crash-<时间戳>.dmp`：自身进程的 minidump（`MiniDumpNormal | MiniDumpWithThreadInfo`，约 1 MB 量级）。
+
+**下次启动会弹一次气泡**告知上次崩溃与证据路径（读完即删标记，不会反复打扰）。
+最多保留最近 5 份，旧的自动清理。dump 是自己调 `MiniDumpWriteDump` 写的，
+**不注册 WER LocalDumps**（那需要管理员权限，与「per-user 免 UAC」冲突）。
+
+**诊断包**：托盘「导出诊断包…」或设置「维护」页「导出诊断包…」一键打 zip 到
+`%APPDATA%\WhSnap\diagnostics\`，程序起不来时还可以用命令行：
+
+```powershell
+& src\WhSnap.App\bin\Release\net8.0-windows10.0.22000.0\WhSnap.exe --diagnostics-pack
+Get-Content "$env:TEMP\whsnap-diagnostics-pack.txt" -Encoding UTF8   # 打印 zip 路径与条目
+```
+
+包内结构：`README.txt`（含隐私声明）、`report.txt`（版本/进程/路径）、`monitors.txt`（显示器拓扑）、
+`hotkeys.txt`（生效热键表）、`settings.json`（当前配置）、`performance.txt`（性能埋点，T4 前是占位说明）、
+`crashes.txt` + `crashes/`（崩溃清单与报告原文）、`logs/`（最新日志，截断到最近 2000 行）。
+
+**隐私边界**：不含剪贴板内容、不含任何凭据（本程序不存凭据）；所有文本里的用户目录
+（含 `settings.json` 里的 JSON 转义写法与 file:// 正斜杠写法）都替换成 `%USERPROFILE%`——
+`--selftest` 会逐个条目断言这一点。
+
+自检覆盖：`--crash-test`（dumps 目录、dbghelp API、报告内容与脱敏、标记只消费一次、保留策略；
+加 `--with-dump` 会真写一份 minidump 校验 `MDMP` 魔数后删除）、
+`--selftest`（崩溃证据 + 诊断包 zip 端到端、条目齐全、回读、脱敏）、
+`--settings-test`（维护页导出入口与失败提示）。
+
 ---
 
 ## 分发（自己 + 小圈子）
@@ -476,10 +509,12 @@ src/
     Pin/                分层贴图窗口、贴图管家、备份存储、贴图内容渲染、管理面板
     Annotation/         标注编辑器、合成管线、矢量绘制
     Settings/           设置窗口（由 schema 自动生成 UI）+ 热键录制与冲突展示
-    Interop/            全部 Win32 P/Invoke 集中于此
-    Services/           热键注册与 L1 探针、剪贴板监听与读入、设置绑定/导入导出、保存、自启、配置、日志、拓扑监听
+    Interop/            全部 Win32 P/Invoke 集中于此（含 dbghelp 的 MiniDumpWriteDump）
+    Services/           热键注册与 L1 探针、剪贴板监听与读入、设置绑定/导入导出、保存、自启、配置、日志、拓扑监听、
+                        更新链路（UpdateService/UpdateCoordinator）、崩溃证据（CrashHandler）、诊断包（DiagnosticsPack）
     Tray/               托盘图标与菜单
-    Diagnostics/        无界面自检（selftest / overlay-test / pin-test / settings-test / annotate-test / capture-to）
+    Diagnostics/        无界面自检（selftest / overlay-test / pin-test / settings-test / annotate-test / element-test /
+                        update-test / crash-test / diagnostics-pack / capture-to）
 tests/
   WhSnap.Core.Tests/    xUnit
 build/
