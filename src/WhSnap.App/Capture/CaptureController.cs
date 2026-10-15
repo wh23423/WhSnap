@@ -19,6 +19,9 @@ internal sealed class CaptureController(SettingsService settings)
     /// <summary>贴图回调（由 App 注入 <c>PinManager.CreatePin</c>）。返回 false 表示贴图失败。</summary>
     public Func<BitmapSource, bool>? PinRequested { get; set; }
 
+    /// <summary>遮罩内的按键绑定（来自设置，改键后宿主会更新）。</summary>
+    public IReadOnlyList<HotkeyBinding> KeyBindings { get; set; } = HotkeyBindings.Resolve(scope: HotkeyScope.Overlay);
+
     public bool IsBusy => _overlay is not null;
 
     public void Start()
@@ -52,7 +55,7 @@ internal sealed class CaptureController(SettingsService settings)
                 Log.Warn("检测到受保护内容被系统屏蔽，截图可能包含黑块。");
             }
 
-            var session = new OverlaySession(frame, monitor, _settings.Current);
+            var session = new OverlaySession(frame, monitor, _settings.Current, KeyBindings);
             _overlay = session;
 
             session.Confirmed += (image, rect, action) =>

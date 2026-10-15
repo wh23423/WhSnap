@@ -26,7 +26,7 @@ internal static class SelfTestRunner
         var failures = new List<string>();
 
         report.AppendLine($"WhSnap 自检　{DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-        report.AppendLine($"版本 0.2.0-preview.1　进程 {(Environment.Is64BitProcess ? "x64" : "x86")}");
+        report.AppendLine($"版本 0.3.0-preview.1　进程 {(Environment.Is64BitProcess ? "x64" : "x86")}");
         report.AppendLine(new string('-', 68));
 
         void Check(string name, Func<string> body)
@@ -85,27 +85,133 @@ internal static class SelfTestRunner
             return string.Join("　|　", monitors.Select(m => m.ToString()));
         });
 
-        Check("全局热键注册与冲突检测", () =>
+        Check("全局热键注册与 L1 冲突判定（Win32 1409）", () =>
         {
-            var spec = new HotkeySpec(HotkeySpec.ModControl | HotkeySpec.ModAlt, 0x78); // Ctrl+Alt+F9
-            using var service = new HotkeyService();
+            using var manager = new HotkeyManager();
 
-            var first = service.Register(spec);
-            if (!first.IsRegistered)
+            var bindings = new List<HotkeyBinding>
             {
-                throw new InvalidOperationException($"首次注册失败：{first.Message}");
+                new("capture.region", "Ctrl+Alt+F9", true),
+                new("capture.pinClipboard", "Ctrl+Alt+F9", true), // 故意撞键：第二个必须被判为已占用
+                new("pin.toggleAll", null, true),                 // 未绑定
+                new("pin.closeAll", "Ctrl+Alt+F10", false),       // 已停用
+            };
+
+            var results = manager.ApplyAll(bindings);
+
+            var registered = results.First(result => result.ActionId == "capture.region");
+            if (!registered.IsActive)
+            {
+                throw new InvalidOperationException($"首次注册失败：{registered.Message}");
             }
 
-            // 第二个服务实例抢同一个热键，必须被判为"已占用"
-            using var second = new HotkeyService();
-            var conflict = second.Register(spec);
+            var conflict = results.First(result => result.ActionId == "capture.pinClipboard");
             if (conflict.Status != HotkeyStatus.ConflictWithSystem)
             {
-                throw new InvalidOperationException($"重复注册未被判为冲突，实际状态：{conflict.Status}（{conflict.Message}）");
+                throw new InvalidOperationException($"重复键未被判为冲突，实际状态：{conflict.Status}（{conflict.Message}）");
             }
 
-            service.Unregister();
-            return $"注册成功，重复注册被判为冲突（Win32 {conflict.Win32Error}）";
+            var unbound = results.First(result => result.ActionId == "pin.toggleAll");
+            var disabled = results.First(result => result.ActionId == "pin.closeAll");
+            if (unbound.Status != HotkeyStatus.Unbound || disabled.Status != HotkeyStatus.Disabled)
+            {
+                throw new InvalidOperationException($"未绑定/停用状态判定错误：{unbound.Status} / {disabled.Status}");
+            }
+
+            // L1 探针：另一个实例先占住 Ctrl+Alt+F11，再探测同一个键
+            HotkeySpec.TryParse("Ctrl+Alt+F11", out var occupied, out _);
+            using (var other = new HotkeyManager())
+            {
+                other.ApplyAll([new HotkeyBinding("capture.region", "Ctrl+Alt+F11", true)]);
+
+                var probe = manager.ProbeOne("capture.region", "截图", occupied);
+                if (probe.Status != HotkeyStatus.ConflictWithSystem)
+                {
+                    throw new InvalidOperationException($"探针未能识别被占用的热键：{probe.Status}（{probe.Message}）");
+                }
+            }
+
+            // 探针释放自己的键后重新探测，空闲的键必须被判为可用
+            var freeProbe = manager.ProbeAll(bindings).First(result => result.ActionId == "capture.region");
+            if (freeProbe.Status != HotkeyStatus.Registered)
+            {
+                throw new InvalidOperationException($"空闲热键被误判为不可用：{freeProbe.Message}");
+            }
+
+            manager.UnregisterAll();
+            return $"注册 1 个 + 冲突 1 个（Win32 {conflict.Win32Error}）+ 未绑定/停用各 1 个；L1 探针正确识别被占用与空闲键";
+        });
+
+        Check("快捷键动作表与配置面完整性（动作表 ↔ 设置 schema ↔ AppSettings）", () =>
+        {
+            var problems = new List<string>();
+            problems.AddRange(HotkeyCatalog.Validate());
+            problems.AddRange(SettingsSchema.Validate());
+            problems.AddRange(SettingsBinder.VerifySchema());
+
+            if (problems.Count > 0)
+            {
+                throw new InvalidOperationException(string.Join("；", problems.Take(5)));
+            }
+
+            int global = HotkeyCatalog.InScope(HotkeyScope.Global).Count();
+            int overlay = HotkeyCatalog.InScope(HotkeyScope.Overlay).Count();
+            int pin = HotkeyCatalog.InScope(HotkeyScope.Pin).Count();
+
+            return $"动作 {HotkeyCatalog.All.Count} 个（全局 {global} / 遮罩 {overlay} / 贴图 {pin}）；"
+                   + $"配置项 {SettingsSchema.All.Count} 项、{SettingsSchema.Groups.Count} 组；schema 与 AppSettings 双向一致";
+        });
+
+        Check("三层冲突检测（L2 内部重复 / L3 冲突源 / 保留键）", () =>
+        {
+            var bindings = new List<HotkeyBinding>
+            {
+                new("capture.region", "Alt+A", true),        // L3：微信截图键
+                new("capture.pinClipboard", "Ctrl+Shift+Q", true),
+                new("pin.toggleAll", "Shift+Ctrl+Q", true),  // L2：修饰键顺序不同但等价
+                new("pin.closeAll", "Alt+Tab", true),        // 保留键
+            };
+
+            var reports = HotkeyConflictDetector.DetectAll(bindings);
+
+            if (!reports.Any(report => report.Layer == HotkeyConflictLayer.Internal))
+            {
+                throw new InvalidOperationException("L2 内部重复未被检出。");
+            }
+
+            if (!reports.Any(report => report.Layer == HotkeyConflictLayer.KnownSource))
+            {
+                throw new InvalidOperationException("L3 常见冲突源未被检出。");
+            }
+
+            if (!reports.Any(report => report.Layer == HotkeyConflictLayer.Reserved))
+            {
+                throw new InvalidOperationException("保留键未被检出。");
+            }
+
+            if (!reports.Any(report => report.Blocks))
+            {
+                throw new InvalidOperationException("必须阻断保存的冲突没有被标记为阻断。");
+            }
+
+            return $"检出 L2/L3/保留键 共 {reports.Count} 条；{HotkeyConflictDetector.Summarize(reports)}";
+        });
+
+        Check("配置导入校验（未知项与非法值都会被报告而非静默丢弃）", () =>
+        {
+            var result = SettingsImportValidator.Validate(new Dictionary<string, string?>
+            {
+                ["CaptureBackend"] = "wgc",
+                ["PinZoomStep"] = "99",          // 超出范围
+                ["NotASettingAtAll"] = "1",      // 未知项
+            });
+
+            if (result.Applied.Count != 1 || result.Unknown.Count != 1 || result.Invalid.Count != 1)
+            {
+                throw new InvalidOperationException($"校验结果不符：应用 {result.Applied.Count}、未知 {result.Unknown.Count}、非法 {result.Invalid.Count}。");
+            }
+
+            return result.Describe();
         });
 
         Check("热键文本解析", () =>

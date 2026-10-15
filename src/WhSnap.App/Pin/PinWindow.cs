@@ -551,29 +551,19 @@ internal sealed class PinWindow : IDisposable
         Zoom(steps, cursor);
     }
 
+    /// <summary>
+    /// 贴图窗口内按键同 <see cref="HotkeyScope.Pin"/> 的配置绑定。
+    /// 方向键微调与 +/- 缩放是固定交互（不属于可配置动作），其余全部走键位表。
+    /// </summary>
     internal bool HandleKey(int virtualKey)
     {
         switch (virtualKey)
         {
-            case '1':
-                Rotate(clockwise: true);
-                return true;
-
-            case '2':
-                Rotate(clockwise: false);
-                return true;
-
-            case '3':
-                Flip(horizontal: true);
-                return true;
-
-            case '4':
-                Flip(horizontal: false);
-                return true;
-
-            case '0':
-                ApplyState(PinGeometry.ResetZoom(State));
-                RaiseChanged(backup: true);
+            case 0x25: // Left
+            case 0x26: // Up
+            case 0x27: // Right
+            case 0x28: // Down
+                Nudge(virtualKey);
                 return true;
 
             case 0xBB: // '+'
@@ -586,53 +576,67 @@ internal sealed class PinWindow : IDisposable
                 Zoom(-1, PinGeometry.Center(State));
                 return true;
 
-            case 0x43: // C
-                if (IsKeyDown(NativeMethods.VK_CONTROL))
-                {
-                    CopyToClipboard();
-                    return true;
-                }
+            case 0x1B: // Esc：隐藏是"通用逃生键"，固定保留（可配置的是 H）
+                Hide();
+                return true;
+        }
 
-                return false;
+        var spec = Services.KeySpecFactory.FromVirtualKey(virtualKey);
+        var action = HotkeyBindings.Match(_manager.KeyBindings, spec, HotkeyScope.Pin);
+        if (action is null)
+        {
+            return false;
+        }
 
-            case 0x53: // S
-                if (IsKeyDown(NativeMethods.VK_CONTROL))
-                {
-                    SaveAs();
-                    return true;
-                }
+        switch (action.Id)
+        {
+            case "pin.copy":
+                CopyToClipboard();
+                return true;
 
-                return false;
+            case "pin.saveAs":
+                SaveAs();
+                return true;
 
-            case 0x20: // 空格
+            case "pin.annotate":
                 AnnotationRequested?.Invoke(this);
                 return true;
 
-            case 0x54: // T
+            case "pin.rotateCw":
+                Rotate(clockwise: true);
+                return true;
+
+            case "pin.rotateCcw":
+                Rotate(clockwise: false);
+                return true;
+
+            case "pin.flipH":
+                Flip(horizontal: true);
+                return true;
+
+            case "pin.flipV":
+                Flip(horizontal: false);
+                return true;
+
+            case "pin.resetZoom":
+                ApplyState(PinGeometry.ResetZoom(State));
+                RaiseChanged(backup: true);
+                return true;
+
+            case "pin.thumbnail":
                 SetThumbnail(!State.Thumbnail);
                 return true;
 
-            case 0x50: // P
+            case "pin.clickThrough":
                 ToggleClickThrough();
                 return true;
 
-            case 0x48: // H
+            case "pin.hide":
                 Hide();
                 return true;
 
-            case 0x1B: // Esc
-                Hide();
-                return true;
-
-            case 0x2E: // Delete
+            case "pin.close":
                 Close();
-                return true;
-
-            case 0x25: // Left
-            case 0x26: // Up
-            case 0x27: // Right
-            case 0x28: // Down
-                Nudge(virtualKey);
                 return true;
 
             default:

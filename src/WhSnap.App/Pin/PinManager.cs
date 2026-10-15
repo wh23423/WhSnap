@@ -64,6 +64,9 @@ internal sealed class PinManager : IDisposable
 
     public PinTextStyle TextStyle => PinTextStyle.FromSettings(_settings.Current);
 
+    /// <summary>贴图窗口内的按键绑定（来自设置，改键后宿主会更新）。</summary>
+    public IReadOnlyList<HotkeyBinding> KeyBindings { get; set; } = HotkeyBindings.Resolve(scope: HotkeyScope.Pin);
+
     public event Action<string, bool>? StatusReported;
 
     public event Action? PinsChanged;

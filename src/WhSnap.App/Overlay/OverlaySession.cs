@@ -4,7 +4,6 @@ using System.Windows.Media.Imaging;
 using WhSnap.Capture;
 using WhSnap.Core;
 using WhSnap.Services;
-
 namespace WhSnap.Overlay;
 
 /// <summary>
@@ -39,12 +38,14 @@ internal sealed class OverlaySession
     private readonly SelectionModel _selection;
     private readonly List<OverlayWindow> _windows = [];
     private readonly OverlayWindow _primary;
+    private readonly IReadOnlyList<HotkeyBinding> _bindings;
     private bool _resolved;
 
-    public OverlaySession(CaptureFrame frame, MonitorInfo activeMonitor, AppSettings settings)
+    public OverlaySession(CaptureFrame frame, MonitorInfo activeMonitor, AppSettings settings, IReadOnlyList<HotkeyBinding>? bindings = null)
     {
         _frame = frame;
         _selection = new SelectionModel(frame.VirtualBounds);
+        _bindings = bindings ?? HotkeyBindings.Resolve(scope: HotkeyScope.Overlay);
 
         foreach (var monitor in frame.Monitors)
         {
@@ -122,56 +123,61 @@ internal sealed class OverlaySession
         Broadcast();
     }
 
-    /// <summary>集中处理键盘操作：所有遮罩窗口都会把按键转到这里。</summary>
+    /// <summary>
+    /// 集中处理键盘操作：所有遮罩窗口都会把按键转到这里。
+    /// 动作键位来自配置（<see cref="HotkeyScope.Overlay"/>），方向键微调是固定交互。
+    /// </summary>
     internal bool HandleKey(Key key, ModifierKeys modifiers)
     {
-        bool control = modifiers.HasFlag(ModifierKeys.Control);
-
-        switch (key)
+        // 方向键微调不是可配置动作，但它必须永远可用（键盘全流程的前提）
+        if (key is Key.Left or Key.Right or Key.Up or Key.Down)
         {
-            case Key.Escape:
-                Cancel();
-                return true;
+            int step = modifiers.HasFlag(ModifierKeys.Shift) ? 10 : 1;
+            bool resize = modifiers.HasFlag(ModifierKeys.Control);
+            var direction = key switch
+            {
+                Key.Left => NudgeDirection.Left,
+                Key.Right => NudgeDirection.Right,
+                Key.Up => NudgeDirection.Up,
+                _ => NudgeDirection.Down,
+            };
 
-            case Key.Enter:
+            if (_selection.Nudge(direction, step, resize))
+            {
+                Broadcast();
+            }
+
+            return true;
+        }
+
+        var spec = Services.KeySpecFactory.FromWpf(key, modifiers);
+        var action = HotkeyBindings.Match(_bindings, spec, HotkeyScope.Overlay);
+        if (action is null)
+        {
+            return false;
+        }
+
+        switch (action.Id)
+        {
+            case "overlay.confirm":
                 Confirm();
                 return true;
 
-            // 确认动作直达：Ctrl+C 复制、Ctrl+S 保存、F3 贴图（其余走配置）
-            case Key.C when control:
+            case "overlay.cancel":
+                Cancel();
+                return true;
+
+            case "overlay.copy":
                 Confirm(OverlayConfirmAction.CopyOnly);
                 return true;
 
-            case Key.S when control:
+            case "overlay.save":
                 Confirm(OverlayConfirmAction.SaveOnly);
                 return true;
 
-            case Key.F3:
+            case "overlay.pin":
                 Confirm(OverlayConfirmAction.PinOnly);
                 return true;
-
-            case Key.Left:
-            case Key.Right:
-            case Key.Up:
-            case Key.Down:
-            {
-                int step = modifiers.HasFlag(ModifierKeys.Shift) ? 10 : 1;
-                bool resize = control;
-                var direction = key switch
-                {
-                    Key.Left => NudgeDirection.Left,
-                    Key.Right => NudgeDirection.Right,
-                    Key.Up => NudgeDirection.Up,
-                    _ => NudgeDirection.Down,
-                };
-
-                if (_selection.Nudge(direction, step, resize))
-                {
-                    Broadcast();
-                }
-
-                return true;
-            }
 
             default:
                 return false;

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using WhSnap.Core;
 
 namespace WhSnap.Services;
 
@@ -9,12 +10,27 @@ namespace WhSnap.Services;
 /// </summary>
 internal sealed class AppSettings
 {
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
 
-    /// <summary>触发截图的热键，格式如 "F1" / "Ctrl+Shift+A"。</summary>
+    /// <summary>
+    /// 【已迁移】旧版单热键字段。schema 3 起改用 <see cref="Hotkeys"/>（动作 id → 键位），
+    /// 这里仅保留用于读取老配置并迁移，程序不再写它。
+    /// </summary>
     public string Hotkey { get; set; } = "F1";
+
+    /// <summary>各动作的键位覆盖（动作 id → 键位文本）。未列出的动作用内置默认值。</summary>
+    public Dictionary<string, string> Hotkeys { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>用户明确停用的动作（冲突时选择"仍保存但不生效"）。</summary>
+    public List<string> DisabledHotkeys { get; set; } = [];
+
+    /// <summary>
+    /// 冲突策略：block = 阻断保存（默认）；save-disabled = 仍保存但停用该热键。
+    /// 无论哪种都**绝不静默失败**——冲突一定会显示出来（§5.7）。
+    /// </summary>
+    public string HotkeyConflictPolicy { get; set; } = "block";
 
     /// <summary>留空则用「图片\WhSnap」。</summary>
     public string SaveDirectory { get; set; } = string.Empty;
@@ -116,6 +132,14 @@ internal sealed class SettingsService
 
     public string? LastError { get; private set; }
 
+    /// <summary>当前生效的热键绑定（默认值 + 用户覆盖 + 停用名单）。</summary>
+    public IReadOnlyList<Core.HotkeyBinding> ResolveHotkeys() =>
+        Core.HotkeyBindings.Resolve(Current.Hotkeys, Current.DisabledHotkeys);
+
+    /// <summary>全局作用域的热键绑定。M3 起全部配置项都在 <see cref="Current"/> 上。</summary>
+    public IReadOnlyList<Core.HotkeyBinding> ResolveGlobalHotkeys() =>
+        Core.HotkeyBindings.Resolve(Current.Hotkeys, Current.DisabledHotkeys, Core.HotkeyScope.Global);
+
     public void Load()
     {
         LastError = null;
@@ -131,12 +155,13 @@ internal sealed class SettingsService
 
             string json = File.ReadAllText(ConfigFilePath);
             Current = JsonSerializer.Deserialize<AppSettings>(json, AppSettings.SerializerOptions) ?? new AppSettings();
+            Current.Hotkeys ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            Current.DisabledHotkeys ??= [];
 
-            // schema 迁移：新增项全部带默认值，因此老配置只需把版本号抬到当前值即可。
-            // 真正需要"改数据"的迁移在 M3 起按版本号逐级处理。
+            // schema 迁移：新增项全部带默认值，老配置只需补"语义发生变化"的部分。
             if (Current.SchemaVersion < AppSettings.CurrentSchemaVersion)
             {
-                Log.Info($"配置 schema {Current.SchemaVersion} → {AppSettings.CurrentSchemaVersion}：新增项使用默认值。");
+                Migrate(Current, Current.SchemaVersion);
                 Current.SchemaVersion = AppSettings.CurrentSchemaVersion;
                 Save();
             }
@@ -148,6 +173,22 @@ internal sealed class SettingsService
             Log.Warn(LastError);
             Current = new AppSettings();
         }
+    }
+
+    /// <summary>按版本逐级迁移（每级只做自己那一步，便于以后继续加）。</summary>
+    private static void Migrate(AppSettings settings, int fromVersion)
+    {
+        // v2 → v3：单个 Hotkey 字段改为按动作的键位表
+        if (fromVersion < 3
+            && !string.IsNullOrWhiteSpace(settings.Hotkey)
+            && !settings.Hotkey.Equals("F1", StringComparison.OrdinalIgnoreCase)
+            && !settings.Hotkeys.ContainsKey("capture.region"))
+        {
+            settings.Hotkeys["capture.region"] = settings.Hotkey.Trim();
+            Log.Info($"配置迁移：旧热键 {settings.Hotkey} → 动作 capture.region。");
+        }
+
+        Log.Info($"配置 schema {fromVersion} → {AppSettings.CurrentSchemaVersion}：新增项使用默认值。");
     }
 
     public void Save()
@@ -163,5 +204,113 @@ internal sealed class SettingsService
             LastError = $"配置写入失败：{ex.Message}";
             Log.Warn(LastError);
         }
+    }
+
+    /// <summary>导出当前配置（备份、求助、导入导出用）。</summary>
+    public string ExportJson() => JsonSerializer.Serialize(Current, AppSettings.SerializerOptions);
+
+    /// <summary>
+    /// 导入配置：逐项校验后写回，未知项与非法值都会被**报告**而不是静默丢弃（§6 第 4 条）。
+    /// 热键表与停用名单单独处理（它们是字典/列表，不在 schema 里）。
+    /// </summary>
+    public SettingsImportResult ImportJson(string json)
+    {
+        var values = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        var hotkeys = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var disabled = new List<string>();
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return new SettingsImportResult([], [], ["根节点不是 JSON 对象"]);
+            }
+
+            foreach (var property in document.RootElement.EnumerateObject())
+            {
+                switch (property.Name)
+                {
+                    // 程序自己的簿记字段：导出文件里会带上，导入时静默跳过（不是"未知项"）
+                    case nameof(AppSettings.SchemaVersion):
+                    case nameof(AppSettings.Hotkey):
+                        break;
+
+                    case nameof(AppSettings.Hotkeys) when property.Value.ValueKind == JsonValueKind.Object:
+                        foreach (var hotkey in property.Value.EnumerateObject())
+                        {
+                            hotkeys[hotkey.Name] = hotkey.Value.GetString() ?? string.Empty;
+                        }
+
+                        break;
+
+                    case nameof(AppSettings.DisabledHotkeys) when property.Value.ValueKind == JsonValueKind.Array:
+                        disabled.AddRange(property.Value.EnumerateArray()
+                            .Select(item => item.GetString())
+                            .Where(item => !string.IsNullOrWhiteSpace(item))
+                            .Select(item => item!));
+                        break;
+
+                    default:
+                        values[property.Name] = property.Value.ValueKind switch
+                        {
+                            JsonValueKind.String => property.Value.GetString(),
+                            JsonValueKind.Number => property.Value.GetRawText(),
+                            JsonValueKind.True => "true",
+                            JsonValueKind.False => "false",
+                            JsonValueKind.Null => null,
+                            _ => null,
+                        };
+                        break;
+                }
+            }
+        }
+        catch (JsonException ex)
+        {
+            return new SettingsImportResult([], [], [$"JSON 解析失败：{ex.Message}"]);
+        }
+
+        var result = SettingsImportValidator.Validate(values);
+        var applied = new List<string>();
+
+        foreach (string key in result.Applied)
+        {
+            if (SettingsBinder.Write(Current, key, values[key], out _))
+            {
+                applied.Add(key);
+            }
+        }
+
+        // 热键：只接受动作表里存在的 id
+        int hotkeysApplied = 0;
+        foreach (var (actionId, keys) in hotkeys)
+        {
+            if (HotkeyCatalog.Find(actionId) is null)
+            {
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(keys))
+            {
+                Current.Hotkeys.Remove(actionId);
+            }
+            else if (HotkeySpec.TryParse(keys, out _, out _))
+            {
+                Current.Hotkeys[actionId] = keys.Trim();
+                hotkeysApplied++;
+            }
+        }
+
+        Current.DisabledHotkeys = disabled.Where(id => HotkeyCatalog.Find(id) is not null).ToList();
+        Save();
+
+        if (hotkeysApplied > 0)
+        {
+            applied.Add($"Hotkeys（{hotkeysApplied} 项）");
+        }
+
+        Log.Info($"配置导入：{string.Join("、", applied)}；忽略 {result.Unknown.Count} 项，非法 {result.Invalid.Count} 项。");
+        return new SettingsImportResult(applied, result.Unknown, result.Invalid);
     }
 }

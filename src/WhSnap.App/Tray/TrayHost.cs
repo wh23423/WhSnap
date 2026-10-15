@@ -45,6 +45,9 @@ internal sealed class TrayHost : IDisposable
         var openPinBackupFolder = new System.Windows.Forms.ToolStripMenuItem("打开贴图备份目录");
         openPinBackupFolder.Click += (_, _) => OpenPinBackupFolderRequested?.Invoke();
 
+        var settings = new System.Windows.Forms.ToolStripMenuItem("设置…");
+        settings.Click += (_, _) => SettingsRequested?.Invoke();
+
         _autoStartItem = new System.Windows.Forms.ToolStripMenuItem("开机自启")
         {
             CheckOnClick = true,
@@ -76,6 +79,7 @@ internal sealed class TrayHost : IDisposable
         menu.Items.Add(openPinBackupFolder);
         menu.Items.Add(openConfigFolder);
         menu.Items.Add(_autoStartItem);
+        menu.Items.Add(settings);
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add(about);
         menu.Items.Add(exit);
@@ -113,6 +117,8 @@ internal sealed class TrayHost : IDisposable
     public event Action? OpenPinBackupFolderRequested;
 
     public event Action? AboutRequested;
+
+    public event Action? SettingsRequested;
 
     public void UpdateHotkeyText(string hotkeyText) => _captureItem.Text = $"截图\t{hotkeyText}";
 

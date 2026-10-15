@@ -9,16 +9,16 @@ using WhSnap.Services;
 using WhSnap.Tray;
 
 namespace WhSnap;
-
 public partial class App : System.Windows.Application
 {
     private Mutex? _instanceMutex;
     private TrayHost? _tray;
-    private HotkeyService? _hotkeys;
+    private HotkeyManager? _hotkeys;
     private CaptureController? _capture;
     private SettingsService? _settings;
     private PinManager? _pins;
     private PinPanelWindow? _pinPanel;
+    private Settings.SettingsWindow? _settingsWindow;
     private TopologyWatcher? _topology;
     private ClipboardWatcher? _clipboard;
 
@@ -41,6 +41,12 @@ public partial class App : System.Windows.Application
         if (e.Args.Any(a => a.Equals("--pin-test", StringComparison.OrdinalIgnoreCase)))
         {
             Shutdown(Diagnostics.PinTestCommand.Run());
+            return;
+        }
+
+        if (e.Args.Any(a => a.Equals("--settings-test", StringComparison.OrdinalIgnoreCase)))
+        {
+            Shutdown(Diagnostics.SettingsTestCommand.Run());
             return;
         }
 
@@ -73,10 +79,10 @@ public partial class App : System.Windows.Application
         _settings = new SettingsService();
         _settings.Load();
 
-        _hotkeys = new HotkeyService();
-        _hotkeys.Pressed += OnCaptureRequested;
+        _hotkeys = new HotkeyManager();
+        _hotkeys.ActionPressed += OnHotkeyAction;
 
-        _tray = new TrayHost(_settings.Current.Hotkey, AutoStartService.IsEnabled());
+        _tray = new TrayHost(TrayHotkeyText(), AutoStartService.IsEnabled());
         _tray.CaptureRequested += OnCaptureRequested;
         _tray.ExitRequested += OnExitRequested;
         _tray.AutoStartToggled += OnAutoStartToggled;
@@ -85,19 +91,26 @@ public partial class App : System.Windows.Application
         _tray.ShowAllPinsRequested += () => _pins?.ShowAll();
         _tray.HideAllPinsRequested += () => _pins?.HideAll();
         _tray.CloseAllPinsRequested += () => _pins?.CloseAll();
+        _tray.SettingsRequested += ShowSettings;
         _tray.OpenSaveFolderRequested += () => OpenFolder(SaveService.ResolveDirectory(_settings.Current), "保存目录");
         _tray.OpenConfigFolderRequested += () => OpenFolder(SettingsService.ConfigDirectory, "配置目录");
         _tray.OpenPinBackupFolderRequested += () => OpenFolder(_pins?.BackupStore.Root ?? SettingsService.ConfigDirectory, "贴图备份目录");
         _tray.AboutRequested += ShowAbout;
 
         // 贴图（M2）：先建管家并恢复上次的贴图，再挂监听
-        _pins = new PinManager(_settings);
+        _pins = new PinManager(_settings)
+        {
+            KeyBindings = _settings.ResolveHotkeys(),
+        };
         _pins.StatusReported += OnStatusReported;
         _pins.PinsChanged += UpdateTrayPinState;
         _pins.AnnotationRequested += OnPinAnnotationRequested;
         _pins.Initialize();
 
-        _capture = new CaptureController(_settings);
+        _capture = new CaptureController(_settings)
+        {
+            KeyBindings = _settings.ResolveHotkeys(),
+        };
         _capture.StatusReported += OnStatusReported;
         _capture.PinRequested = image =>
         {
@@ -133,7 +146,7 @@ public partial class App : System.Windows.Application
 
         UpdateTrayPinState();
 
-        ApplyHotkey(_settings.Current.Hotkey);
+        var hotkeyResults = ApplyHotkeys();
         EnsureAutoStartState();
 
         if (!string.IsNullOrEmpty(_settings.LastError))
@@ -142,8 +155,14 @@ public partial class App : System.Windows.Application
         }
         else
         {
-            string hotkey = _hotkeys.Current?.ToString() ?? _settings.Current.Hotkey;
-            _tray.ShowBalloon("WhSnap 已启动", $"按 {hotkey} 开始截图（Enter 确认，F3 直接贴图），或双击托盘图标。");
+            string capture = _settings.ResolveHotkeys().First(binding => binding.ActionId == "capture.region").Keys ?? "(未绑定)";
+            _tray.ShowBalloon("WhSnap 已启动", $"按 {capture} 开始截图（Enter 确认，F3 直接贴图），或双击托盘图标。");
+        }
+
+        // 注册失败的热键必须显式告知，绝不静默失败（§5.7）
+        foreach (var failed in hotkeyResults.Where(result => result.Status == HotkeyStatus.ConflictWithSystem))
+        {
+            _tray.ShowBalloon("热键已被占用", $"{failed.Message} 可在托盘「设置…」里改键或检测占用。", warning: true);
         }
     }
 
@@ -153,6 +172,7 @@ public partial class App : System.Windows.Application
         _clipboard?.Dispose();
         _pins?.Dispose();
         _pinPanel?.Close();
+        _settingsWindow?.Close();
         _tray?.Dispose();
         _hotkeys?.Dispose();
 
@@ -167,6 +187,176 @@ public partial class App : System.Windows.Application
 
         _instanceMutex?.Dispose();
         base.OnExit(e);
+    }
+
+    private string TrayHotkeyText()
+    {
+        var capture = _settings?.ResolveHotkeys().FirstOrDefault(binding => binding.ActionId == "capture.region");
+        return capture?.Keys ?? "未绑定";
+    }
+
+    /// <summary>按当前配置重新注册全部全局热键，并把最新绑定推给遮罩/贴图窗口。</summary>
+    private IReadOnlyList<HotkeyRegistrationResult> ApplyHotkeys()
+    {
+        if (_settings is null || _hotkeys is null)
+        {
+            return [];
+        }
+
+        var bindings = _settings.ResolveHotkeys();
+        var results = _hotkeys.ApplyAll(bindings);
+
+        if (_pins is not null)
+        {
+            _pins.KeyBindings = bindings;
+        }
+
+        if (_capture is not null)
+        {
+            _capture.KeyBindings = bindings;
+        }
+
+        _tray?.UpdateHotkeyText(TrayHotkeyText());
+        return results;
+    }
+
+    private void OnHotkeyAction(string actionId)
+    {
+        try
+        {
+            switch (actionId)
+            {
+                case "capture.region":
+                    OnCaptureRequested();
+                    break;
+
+                case "capture.pinClipboard":
+                    OnClipboardPinRequested();
+                    break;
+
+                case "pin.toggleAll":
+                    if (_pins is null)
+                    {
+                        break;
+                    }
+
+                    if (_pins.VisibleCount > 0)
+                    {
+                        _pins.HideAll();
+                    }
+                    else
+                    {
+                        _pins.ShowAll();
+                    }
+
+                    break;
+
+                case "pin.closeAll":
+                    _pins?.CloseAll();
+                    break;
+
+                case "pin.showPanel":
+                    ShowPinPanel();
+                    break;
+
+                case "settings.open":
+                    ShowSettings();
+                    break;
+
+                default:
+                    Log.Warn($"未处理的热键动作：{actionId}");
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"处理热键动作 {actionId} 失败", ex);
+            _tray?.ShowBalloon("WhSnap 出错了", ex.Message, warning: true);
+        }
+    }
+
+    private void ShowSettings()
+    {
+        if (_settings is null)
+        {
+            return;
+        }
+
+        if (_settingsWindow is { IsLoaded: true })
+        {
+            _settingsWindow.Activate();
+            return;
+        }
+
+        var window = new Settings.SettingsWindow(_settings)
+        {
+            ApplyHotkeys = _ => ApplyHotkeys(),
+            ProbeHotkeys = bindings => _hotkeys?.ProbeAll(bindings) ?? [],
+            DiagnosticsProvider = BuildDiagnostics,
+            ClearPinBackups = () =>
+            {
+                _pins?.BackupStore.Clear();
+                Log.Info("用户清理了贴图备份。");
+            },
+        };
+
+        window.SettingsChanged += OnSettingsChanged;
+        window.Closed += (_, _) => _settingsWindow = null;
+        _settingsWindow = window;
+        window.Show();
+    }
+
+    /// <summary>设置里改了会即时生效的项（自启、剪贴板监听、采集后端…）后同步运行时状态。</summary>
+    private void OnSettingsChanged()
+    {
+        try
+        {
+            if (_settings is null)
+            {
+                return;
+            }
+
+            AutoStartService.SetEnabled(_settings.Current.AutoStart);
+            _tray?.SyncAutoStart(AutoStartService.IsEnabled());
+            ApplyClipboardWatcher();
+            ApplyHotkeys();
+            UpdateTrayPinState();
+        }
+        catch (Exception ex)
+        {
+            Log.Error("应用设置变更失败", ex);
+        }
+    }
+
+    private string BuildDiagnostics()
+    {
+        var builder = new System.Text.StringBuilder();
+        var monitors = _capture is null ? [] : PinMonitorList();
+
+        builder.AppendLine($"版本　　　　WhSnap 0.3.0-preview.1（{Environment.OSVersion.VersionString}）");
+        builder.AppendLine($"进程　　　　{(Environment.Is64BitProcess ? "x64" : "x86")}　PID {Environment.ProcessId}");
+        builder.AppendLine($"虚拟桌面　　{_pins?.Desktop}　显示器 {monitors.Count} 台");
+        builder.AppendLine($"最近后端　　{_settings?.Current.CaptureBackend}");
+        builder.AppendLine($"贴图　　　　{_pins?.Count ?? 0} 张（显示中 {_pins?.VisibleCount ?? 0}）");
+        builder.AppendLine($"热键　　　　已注册 {_hotkeys?.RegisteredCount ?? 0} 个全局热键");
+        builder.AppendLine($"剪贴板监听　{(_clipboard?.IsRunning == true ? "开启" : "关闭")}");
+        builder.AppendLine($"配置　　　　{SettingsService.ConfigFilePath}");
+        builder.AppendLine($"贴图备份　　{_pins?.BackupStore.Root}");
+        builder.AppendLine($"日志　　　　{Log.CurrentLogFile}");
+        return builder.ToString();
+    }
+
+    private List<MonitorInfo> PinMonitorList()
+    {
+        try
+        {
+            return Capture.MonitorEnumerator.Enumerate().ToList();
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"枚举显示器失败：{ex.Message}");
+            return [];
+        }
     }
 
     private void UpdateTrayPinState() =>
@@ -251,27 +441,6 @@ public partial class App : System.Windows.Application
         _tray?.ShowBalloon(
             "贴图内标注",
             $"已选中贴图 #{pin.ZIndex + 1}。贴图内标注引擎在 M4 提供；当前可先「复制到剪贴板」，或关闭贴图后用截图遮罩继续。");
-    }
-
-    private void ApplyHotkey(string configured)
-    {
-        if (!HotkeySpec.TryParse(configured, out var spec, out string? error))
-        {
-            Log.Warn($"配置中的热键无法解析（{configured}）：{error}");
-            _tray?.ShowBalloon("热键无效", $"{error} 已临时回退为 F1，可在配置目录的 settings.json 中修改。", warning: true);
-            HotkeySpec.TryParse("F1", out spec, out _);
-        }
-
-        var result = _hotkeys!.Register(spec);
-        if (!result.IsRegistered)
-        {
-            Log.Warn(result.Message);
-            _tray?.ShowBalloon("热键注册失败", $"{result.Message} 仍可用托盘菜单截图。", warning: true);
-            return;
-        }
-
-        _tray?.UpdateHotkeyText(spec.ToString());
-        Log.Info(result.Message);
     }
 
     private void EnsureAutoStartState()
