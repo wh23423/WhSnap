@@ -31,6 +31,37 @@
         <!-- HUD：放大镜 + 尺寸 + 色值 -->
         <Canvas x:Name="HudLayer" ClipToBounds="True" IsHitTestVisible="False">
 
+            <!-- 元素检测：光标下的界面元素高亮框 -->
+            <Border x:Name="ElementBorder"
+                    Visibility="Collapsed"
+                    BorderBrush="#FF35C7FF"
+                    BorderThickness="2"
+                    Background="#2035C7FF"
+                    CornerRadius="2">
+                <Border x:Name="ElementLabelBorder"
+                        Background="#E61B1B1B"
+                        CornerRadius="3"
+                        Padding="6,2"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Top">
+                    <TextBlock x:Name="ElementLabel"
+                               Foreground="#FFF2F2F2"
+                               FontFamily="Microsoft YaHei UI"
+                               FontSize="11" />
+                </Border>
+            </Border>
+
+            <!-- 颜色历史（取色器） -->
+            <Border x:Name="ColorHistoryPanel"
+                    Visibility="Collapsed"
+                    Background="#CC1B1B1B"
+                    BorderBrush="#553B9CFF"
+                    BorderThickness="1"
+                    CornerRadius="3"
+                    Padding="6,4">
+                <StackPanel x:Name="ColorHistoryStrip" Orientation="Horizontal" />
+            </Border>
+
             <Border x:Name="MagnifierPanel"
                     Visibility="Collapsed"
                     Background="#FF0E0E0E"
@@ -91,7 +122,7 @@
             <TextBlock Foreground="#FFDCDCDC"
                        FontFamily="Microsoft YaHei UI"
                        FontSize="12"
-                       Text="拖动框选　·　方向键微调　·　Ctrl+方向键改右下边界　·　Shift 加速 10px　·　Enter 确认　·　T 标注　·　Ctrl+C 复制　·　Ctrl+S 保存　·　F3 贴图　·　Esc 取消" />
+                       Text="拖动框选　·　单击选中高亮元素　·　Tab 切元素　·　方向键微调　·　Ctrl+方向键改边界　·　T 标注　·　C 取色　·　Enter 确认　·　F3 贴图　·　Esc 取消" />
         </Border>
 
     </Grid>

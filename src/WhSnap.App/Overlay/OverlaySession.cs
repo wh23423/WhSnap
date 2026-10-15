@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using WhSnap.Capture;
 using WhSnap.Core;
 using WhSnap.Services;
@@ -39,13 +40,31 @@ internal sealed class OverlaySession
     private readonly List<OverlayWindow> _windows = [];
     private readonly OverlayWindow _primary;
     private readonly IReadOnlyList<HotkeyBinding> _bindings;
+    private readonly AppSettings _settings;
+    private readonly ColorHistory _colorHistory;
+    private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
+
+    private IReadOnlyList<ElementCandidate> _candidates = [];
+    private ElementCandidate? _highlighted;
+    private PhysicalRect? _pendingElement;
+    private PhysicalPoint _pressPoint;
+    private int _elementGeneration;
     private bool _resolved;
 
-    public OverlaySession(CaptureFrame frame, MonitorInfo activeMonitor, AppSettings settings, IReadOnlyList<HotkeyBinding>? bindings = null)
+    public OverlaySession(
+        CaptureFrame frame,
+        MonitorInfo activeMonitor,
+        AppSettings settings,
+        IReadOnlyList<HotkeyBinding>? bindings = null,
+        ColorHistory? colorHistory = null,
+        bool colorPickMode = false)
     {
         _frame = frame;
         _selection = new SelectionModel(frame.VirtualBounds);
         _bindings = bindings ?? HotkeyBindings.Resolve(scope: HotkeyScope.Overlay);
+        _settings = settings;
+        _colorHistory = colorHistory ?? new ColorHistory(settings.ColorHistoryRetention);
+        ColorPickMode = colorPickMode;
 
         foreach (var monitor in frame.Monitors)
         {
@@ -62,7 +81,16 @@ internal sealed class OverlaySession
     /// <summary>用户要求先把选区送去标注（`T`）。会话会就地关闭，由宿主打开标注编辑器。</summary>
     public event Action<BitmapSource, PhysicalRect>? AnnotateRequested;
 
+    /// <summary>取到颜色（取色器）。宿主负责持久化颜色历史。</summary>
+    public event Action<RgbColor>? ColorPicked;
+
+    /// <summary>状态提示（取色结果等）。</summary>
+    public event Action<string, bool>? StatusReported;
+
     public event Action? Cancelled;
+
+    /// <summary>取色模式：单击即取色并结束会话，不产生选区（托盘「取色器」）。</summary>
+    public bool ColorPickMode { get; }
 
     public PhysicalRect CurrentSelection => _selection.Current;
 
@@ -70,6 +98,15 @@ internal sealed class OverlaySession
 
     /// <summary>已创建的遮罩窗口数量（正常情况下等于显示器数量）。</summary>
     internal int WindowCount => _windows.Count;
+
+    /// <summary>当前元素检测候选（自检读取）。</summary>
+    internal IReadOnlyList<ElementCandidate> ElementCandidates => _candidates;
+
+    /// <summary>当前高亮的元素（自检读取）。</summary>
+    internal ElementCandidate? HighlightedElement => _highlighted;
+
+    /// <summary>颜色历史（自检读取）。</summary>
+    internal ColorHistory History => _colorHistory;
 
     public void Show()
     {
@@ -82,15 +119,34 @@ internal sealed class OverlaySession
         _primary.Activate();
         _primary.Focus();
         Broadcast();
+        BroadcastColorHistory();
+
+        if (ColorPickMode)
+        {
+            StatusReported?.Invoke("取色器：点一下即可取色并复制，Esc 退出。", false);
+        }
     }
 
     internal void OnPointerPressed(PhysicalPoint absolute, int clickCount)
     {
+        if (ColorPickMode)
+        {
+            PickColor(absolute);
+            Cancel();
+            return;
+        }
+
         if (clickCount >= 2)
         {
             Confirm();
             return;
         }
+
+        _pressPoint = absolute;
+
+        // 元素检测：按下时若光标下有高亮元素，先记住它——只有"没拖动"才把它当选中
+        _pendingElement = _selection.HasSelection ? null : _highlighted?.Bounds;
+
         var handle = SelectionModel.HitTest(_selection.Current, absolute, HandleTolerancePx);
 
         switch (handle)
@@ -115,6 +171,17 @@ internal sealed class OverlaySession
         {
             _selection.Update(absolute);
             Broadcast();
+
+            // 拖动超过 4 像素说明用户想手动框选，放弃元素吸附
+            if (_pendingElement is not null && Distance(_pressPoint, absolute) > 4)
+            {
+                _pendingElement = null;
+                RenderElementHighlight(null);
+            }
+        }
+        else
+        {
+            RequestElements(absolute);
         }
 
         UpdateCursor(absolute);
@@ -122,8 +189,152 @@ internal sealed class OverlaySession
 
     internal void OnPointerReleased()
     {
+        // 单击（没有明显拖动）+ 光标下有元素 → 直接选中该元素
+        if (_pendingElement is { } element && Distance(_pressPoint, Pin.PinWindow.CursorPosition()) <= 4)
+        {
+            _selection.SetSelection(element);
+            StatusReported?.Invoke($"已选中元素：{element}", false);
+        }
+
+        _pendingElement = null;
         _selection.End();
         Broadcast();
+    }
+
+    private static double Distance(PhysicalPoint a, PhysicalPoint b)
+    {
+        double dx = a.X - b.X;
+        double dy = a.Y - b.Y;
+        return Math.Sqrt((dx * dx) + (dy * dy));
+    }
+
+    /// <summary>异步查询光标下的元素候选（UIA 可能慢，绝不阻塞界面）。过期结果直接丢弃。</summary>
+    private void RequestElements(PhysicalPoint point)
+    {
+        if (!_settings.ElementDetectionEnabled)
+        {
+            if (_highlighted is not null)
+            {
+                _highlighted = null;
+                _candidates = [];
+                RenderElementHighlight(null);
+            }
+
+            return;
+        }
+
+        int generation = ++_elementGeneration;
+
+        _ = ElementLocator.FindAsync(point, _settings.ElementDetectionUseUia).ContinueWith(task =>
+        {
+            if (!task.IsCompletedSuccessfully || generation != _elementGeneration)
+            {
+                return;
+            }
+
+            var candidates = task.Result;
+
+            _dispatcher.BeginInvoke(() =>
+            {
+                if (generation != _elementGeneration || _resolved)
+                {
+                    return;
+                }
+
+                _candidates = candidates;
+                _highlighted = ElementDetection.Choose(candidates, point);
+                RenderElementHighlight(_highlighted?.Bounds);
+            });
+        }, TaskScheduler.Default);
+    }
+
+    /// <summary>Tab：在光标下的元素候选之间由内向外切换，并直接选中。</summary>
+    private void CycleElement()
+    {
+        var cursor = Pin.PinWindow.CursorPosition();
+
+        if (_candidates.Count == 0)
+        {
+            _candidates = ElementLocator.Find(cursor, _settings.ElementDetectionUseUia);
+        }
+
+        _highlighted = ElementDetection.Cycle(_candidates, cursor, _highlighted);
+
+        if (_highlighted is null)
+        {
+            StatusReported?.Invoke("光标下没有检测到界面元素（可关闭元素检测或改用手动框选）。", true);
+            return;
+        }
+
+        _selection.SetSelection(_highlighted.Bounds);
+        RenderElementHighlight(_highlighted.Bounds);
+        Broadcast();
+        StatusReported?.Invoke($"元素：{_highlighted.Describe()}", false);
+    }
+
+    private void RenderElementHighlight(PhysicalRect? absolute)
+    {
+        foreach (var window in _windows)
+        {
+            window.RenderElement(absolute);
+        }
+    }
+
+    private void BroadcastColorHistory()
+    {
+        foreach (var window in _windows)
+        {
+            window.RenderColorHistory(_colorHistory, _settings.OverlayShowColorHistory);
+        }
+    }
+
+    /// <summary>取色：读冻结底图上光标所在像素，按设置格式复制到剪贴板并计入历史。</summary>
+    internal void PickColorAtCursor() => PickColor(Pin.PinWindow.CursorPosition());
+
+    internal void PickColor(PhysicalPoint absolute)
+    {
+        if (!TryReadPixel(absolute, out var color))
+        {
+            StatusReported?.Invoke("取色失败：光标超出冻结画面范围。", true);
+            return;
+        }
+
+        _colorHistory.Add(color);
+        var format = ColorText.ParseFormat(_settings.ColorCopyFormat);
+        string clipboardText = ColorText.Format(color, format);
+        string oneLine = clipboardText.Replace(Environment.NewLine, "　", StringComparison.Ordinal);
+
+        if (ClipboardService.TrySetText(clipboardText, out string error))
+        {
+            StatusReported?.Invoke($"已复制颜色 {oneLine}", false);
+        }
+        else
+        {
+            StatusReported?.Invoke($"取到颜色 {oneLine}，但写入剪贴板失败：{error}", true);
+        }
+
+        ColorPicked?.Invoke(color);
+        BroadcastColorHistory();
+    }
+
+    /// <summary>从冻结画面读一个像素。</summary>
+    internal bool TryReadPixel(PhysicalPoint absolute, out RgbColor color)
+    {
+        color = default;
+
+        int x = absolute.X - _frame.VirtualBounds.X;
+        int y = absolute.Y - _frame.VirtualBounds.Y;
+
+        if (x < 0 || y < 0 || x >= _frame.Image.PixelWidth || y >= _frame.Image.PixelHeight)
+        {
+            return false;
+        }
+
+        var pixel = new CroppedBitmap(_frame.Image, new Int32Rect(x, y, 1, 1));
+        var buffer = new byte[4];
+        pixel.CopyPixels(buffer, 4, 0);
+        color = new RgbColor(buffer[2], buffer[1], buffer[0]);
+        return true;
     }
 
     /// <summary>
@@ -184,6 +395,14 @@ internal sealed class OverlaySession
 
             case "overlay.annotate":
                 RequestAnnotate();
+                return true;
+
+            case "overlay.cycleElement":
+                CycleElement();
+                return true;
+
+            case "overlay.pickColor":
+                PickColorAtCursor();
                 return true;
 
             default:

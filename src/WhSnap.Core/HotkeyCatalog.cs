@@ -58,6 +58,10 @@ public static class HotkeyCatalog
             "把选区直接贴到屏幕上，不进剪贴板、不落盘。"),
         new("overlay.annotate", "进入标注", HotkeyScope.Overlay, "遮罩", "T",
             "打开标注编辑器，在选区内画矩形/箭头/文字/马赛克等（工具键位见「标注」作用域）。"),
+        new("overlay.cycleElement", "切换元素检测候选", HotkeyScope.Overlay, "遮罩", "Tab",
+            "由内向外在光标下的界面元素之间切换（按钮 → 面板 → 窗口）。"),
+        new("overlay.pickColor", "取色并复制", HotkeyScope.Overlay, "遮罩", "C",
+            "取光标所在像素的颜色，按设置里的表示法复制到剪贴板，并记入颜色历史。"),
 
         // ---- 标注编辑器（弹窗内生效）----
         new("annotation.confirm", "确认标注", HotkeyScope.Annotation, "标注", "Enter",

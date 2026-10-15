@@ -12,6 +12,7 @@ internal sealed class TrayHost : IDisposable
     private readonly System.Windows.Forms.ToolStripMenuItem _pinItem;
     private readonly System.Windows.Forms.ToolStripMenuItem _clipboardPinItem;
     private readonly System.Windows.Forms.ToolStripMenuItem _panelItem;
+    private readonly System.Windows.Forms.ToolStripMenuItem _recentColorsItem;
     private bool _suppressAutoStartEvent;
 
     public TrayHost(string hotkeyText, bool autoStartEnabled)
@@ -48,6 +49,14 @@ internal sealed class TrayHost : IDisposable
         var settings = new System.Windows.Forms.ToolStripMenuItem("设置…");
         settings.Click += (_, _) => SettingsRequested?.Invoke();
 
+        var picker = new System.Windows.Forms.ToolStripMenuItem("取色器（取色并复制）");
+        picker.Click += (_, _) => PickerRequested?.Invoke();
+
+        _recentColorsItem = new System.Windows.Forms.ToolStripMenuItem("最近颜色（空）")
+        {
+            Enabled = false,
+        };
+
         _autoStartItem = new System.Windows.Forms.ToolStripMenuItem("开机自启")
         {
             CheckOnClick = true,
@@ -70,6 +79,9 @@ internal sealed class TrayHost : IDisposable
         menu.Items.Add(_captureItem);
         menu.Items.Add(_clipboardPinItem);
         menu.Items.Add(_panelItem);
+        menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+        menu.Items.Add(picker);
+        menu.Items.Add(_recentColorsItem);
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add(_pinItem);
         menu.Items.Add(hideAllPins);
@@ -120,6 +132,15 @@ internal sealed class TrayHost : IDisposable
 
     public event Action? SettingsRequested;
 
+    /// <summary>托盘「取色器」：开始一次只取色的截图会话。</summary>
+    public event Action? PickerRequested;
+
+    /// <summary>托盘「最近颜色」里选中了某个颜色（宿主负责按设置格式复制）。</summary>
+    public event Action<WhSnap.Core.RgbColor>? RecentColorSelected;
+
+    /// <summary>托盘「最近颜色」里的「清空历史」。</summary>
+    public event Action? ClearColorHistoryRequested;
+
     public void UpdateHotkeyText(string hotkeyText) => _captureItem.Text = $"截图\t{hotkeyText}";
 
     /// <summary>贴图数量与剪贴板监听状态直接写在菜单上，避免"不知道现在有几张贴图"。</summary>
@@ -129,6 +150,36 @@ internal sealed class TrayHost : IDisposable
         _pinItem.Text = pinCount == 0 ? "显示全部贴图" : $"显示全部贴图（{pinCount}）";
         _panelItem.Enabled = pinCount > 0;
         _clipboardPinItem.Text = clipboardWatcherRunning ? "从剪贴板贴图　（监听中）" : "从剪贴板贴图";
+    }
+
+    /// <summary>刷新「最近颜色」子菜单（取色后即时更新）。</summary>
+    public void SyncRecentColors(IReadOnlyList<WhSnap.Core.RgbColor> colors)
+    {
+        var dropDown = _recentColorsItem.DropDownItems;
+        dropDown.Clear();
+
+        _recentColorsItem.Text = colors.Count == 0 ? "最近颜色（空）" : $"最近颜色（{colors.Count}）";
+        _recentColorsItem.Enabled = colors.Count > 0;
+
+        foreach (var color in colors.Take(12))
+        {
+            var item = new System.Windows.Forms.ToolStripMenuItem($"{color.ToHex().ToUpperInvariant()}　rgb({color.R}, {color.G}, {color.B})")
+            {
+                Tag = color,
+                ForeColor = System.Drawing.Color.FromArgb(color.R, color.G, color.B),
+            };
+
+            item.Click += (_, _) => RecentColorSelected?.Invoke((WhSnap.Core.RgbColor)item.Tag);
+            dropDown.Add(item);
+        }
+
+        if (colors.Count > 0)
+        {
+            dropDown.Add(new System.Windows.Forms.ToolStripSeparator());
+            var clear = new System.Windows.Forms.ToolStripMenuItem("清空颜色历史");
+            clear.Click += (_, _) => ClearColorHistoryRequested?.Invoke();
+            dropDown.Add(clear);
+        }
     }
 
     public void SyncAutoStart(bool enabled)

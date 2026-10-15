@@ -10,7 +10,7 @@ namespace WhSnap.Services;
 /// </summary>
 internal sealed class AppSettings
 {
-    public const int CurrentSchemaVersion = 4;
+    public const int CurrentSchemaVersion = 5;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
 
@@ -46,6 +46,24 @@ internal sealed class AppSettings
 
     /// <summary>遮罩未选中区域的暗度，0-90。</summary>
     public int OverlayDimOpacity { get; set; } = 45;
+
+    /// <summary>元素检测：遮罩显示时自动高亮/选中光标下的界面元素。</summary>
+    public bool ElementDetectionEnabled { get; set; } = true;
+
+    /// <summary>元素检测是否使用 UI Automation（关闭则只用顶层窗口矩形，更快但粒度粗）。</summary>
+    public bool ElementDetectionUseUia { get; set; } = true;
+
+    /// <summary>取色时复制到剪贴板的表示法：hex / rgb / hsl / cmyk / all。</summary>
+    public string ColorCopyFormat { get; set; } = "hex";
+
+    /// <summary>颜色历史保留条数。</summary>
+    public int ColorHistoryRetention { get; set; } = 24;
+
+    /// <summary>遮罩里是否显示颜色历史色块。</summary>
+    public bool OverlayShowColorHistory { get; set; } = true;
+
+    /// <summary>颜色历史（程序状态，不作为设置项显示在界面上）。</summary>
+    public string ColorHistoryText { get; set; } = string.Empty;
 
     /// <summary>
     /// 采集后端：auto（WGC → DXGI → GDI 自动降级）/ wgc / dxgi / gdi。
@@ -261,6 +279,7 @@ internal sealed class SettingsService
                     // 程序自己的簿记字段：导出文件里会带上，导入时静默跳过（不是"未知项"）
                     case nameof(AppSettings.SchemaVersion):
                     case nameof(AppSettings.Hotkey):
+                    case nameof(AppSettings.ColorHistoryText):
                         break;
 
                     case nameof(AppSettings.Hotkeys) when property.Value.ValueKind == JsonValueKind.Object:

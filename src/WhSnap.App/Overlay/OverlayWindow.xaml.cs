@@ -274,6 +274,80 @@ internal partial class OverlayWindow : System.Windows.Window
         }
     }
 
+    /// <summary>渲染元素检测高亮（绝对物理坐标；跨屏时只画落在本显示器内的部分）。</summary>
+    internal void RenderElement(PhysicalRect? absolute)
+    {
+        if (absolute is not { } rect || rect.IsEmpty)
+        {
+            ElementBorder.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var local = VirtualDesktop.ToMonitorLocal(rect, Monitor);
+
+        // 与本屏求交：跨屏元素只显示本屏那一块
+        var visible = local.Intersect(new PhysicalRect(0, 0, Monitor.Bounds.Width, Monitor.Bounds.Height));
+        if (visible.IsEmpty)
+        {
+            ElementBorder.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        double left = PhysicalToDip(visible.X);
+        double top = PhysicalToDip(visible.Y);
+
+        ElementBorder.Visibility = Visibility.Visible;
+        Canvas.SetLeft(ElementBorder, left);
+        Canvas.SetTop(ElementBorder, top);
+        ElementBorder.Width = PhysicalToDip(visible.Width);
+        ElementBorder.Height = PhysicalToDip(visible.Height);
+
+        // 标签跟随元素左上角，超出屏幕时贴到内部
+        ElementLabel.Text = $"{rect.Width} × {rect.Height}　元素";
+        ElementLabelBorder.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
+        var labelSize = ElementLabelBorder.DesiredSize;
+        double fullWidth = PhysicalToDip(Monitor.Bounds.Width);
+        double fullHeight = PhysicalToDip(Monitor.Bounds.Height);
+
+        Canvas.SetLeft(ElementLabelBorder, Math.Clamp(left, 0, Math.Max(fullWidth - labelSize.Width, 0)));
+        Canvas.SetTop(ElementLabelBorder, Math.Clamp(top - labelSize.Height - 2, 0, Math.Max(fullHeight - labelSize.Height, 0)));
+    }
+
+    /// <summary>渲染颜色历史色块（左下角）。</summary>
+    internal void RenderColorHistory(ColorHistory history, bool visible)
+    {
+        ColorHistoryStrip.Children.Clear();
+
+        if (!visible || history.Count == 0)
+        {
+            ColorHistoryPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        foreach (var color in history.Items.Take(12))
+        {
+            var swatch = new Rectangle
+            {
+                Width = 16,
+                Height = 16,
+                Margin = new Thickness(2, 0, 2, 0),
+                Fill = new SolidColorBrush(Color.FromRgb(color.R, color.G, color.B)),
+                Stroke = new SolidColorBrush(Color.FromArgb(0x88, 0xFF, 0xFF, 0xFF)),
+                StrokeThickness = 1,
+            };
+
+            swatch.ToolTip = ColorValue.Describe(color);
+            ColorHistoryStrip.Children.Add(swatch);
+        }
+
+        ColorHistoryPanel.Visibility = Visibility.Visible;
+        ColorHistoryPanel.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
+        var size = ColorHistoryPanel.DesiredSize;
+        double fullHeight = PhysicalToDip(Monitor.Bounds.Height);
+        Canvas.SetLeft(ColorHistoryPanel, PhysicalToDip(16));
+        Canvas.SetTop(ColorHistoryPanel, Math.Max(fullHeight - size.Height - PhysicalToDip(16), 0));
+    }
+
     /// <summary>更新光标相关 HUD。只有光标确实位于本显示器时才绘制放大镜/色值/尺寸。</summary>
     internal void RenderCursor(PhysicalPoint absolute)
     {

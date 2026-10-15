@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using WhSnap.Capture;
 using WhSnap.Core;
 using WhSnap.Diagnostics;
@@ -23,6 +24,8 @@ public partial class App : System.Windows.Application
     private Settings.SettingsWindow? _settingsWindow;
     private TopologyWatcher? _topology;
     private ClipboardWatcher? _clipboard;
+    private ColorHistory _colorHistory = new();
+    private DispatcherTimer? _settingsSaveTimer;
 
     protected override void OnStartup(System.Windows.StartupEventArgs e)
     {
@@ -58,6 +61,12 @@ public partial class App : System.Windows.Application
             return;
         }
 
+        if (e.Args.Any(a => a.Equals("--element-test", StringComparison.OrdinalIgnoreCase)))
+        {
+            Shutdown(Diagnostics.ElementTestCommand.Run());
+            return;
+        }
+
         if (TryGetArgument(e.Args, "--capture-to", out string? capturePath) && !string.IsNullOrWhiteSpace(capturePath))
         {
             TryGetArgument(e.Args, "--backend", out string? backendName);
@@ -86,6 +95,7 @@ public partial class App : System.Windows.Application
 
         _settings = new SettingsService();
         _settings.Load();
+        _colorHistory = ColorHistory.FromText(_settings.Current.ColorHistoryText, _settings.Current.ColorHistoryRetention);
 
         _hotkeys = new HotkeyManager();
         _hotkeys.ActionPressed += OnHotkeyAction;
@@ -100,6 +110,14 @@ public partial class App : System.Windows.Application
         _tray.HideAllPinsRequested += () => _pins?.HideAll();
         _tray.CloseAllPinsRequested += () => _pins?.CloseAll();
         _tray.SettingsRequested += ShowSettings;
+        _tray.PickerRequested += () => _capture?.Start(colorPickMode: true);
+        _tray.RecentColorSelected += CopyColorFromHistory;
+        _tray.ClearColorHistoryRequested += () =>
+        {
+            _colorHistory.Clear();
+            PersistColorHistory();
+            _tray.ShowBalloon("取色器", "颜色历史已清空。");
+        };
         _tray.OpenSaveFolderRequested += () => OpenFolder(SaveService.ResolveDirectory(_settings.Current), "保存目录");
         _tray.OpenConfigFolderRequested += () => OpenFolder(SettingsService.ConfigDirectory, "配置目录");
         _tray.OpenPinBackupFolderRequested += () => OpenFolder(_pins?.BackupStore.Root ?? SettingsService.ConfigDirectory, "贴图备份目录");
@@ -118,8 +136,14 @@ public partial class App : System.Windows.Application
         _capture = new CaptureController(_settings)
         {
             KeyBindings = _settings.ResolveHotkeys(),
+            ColorHistory = _colorHistory,
         };
         _capture.StatusReported += OnStatusReported;
+        _capture.ColorPicked += _ =>
+        {
+            PersistColorHistory();
+            _tray?.SyncRecentColors(_colorHistory.Items);
+        };
         _capture.AnnotateRequested += (image, rect) => OpenAnnotation(image, rect, (annotated, copyOnly) =>
             _capture?.CompleteConfirmed(annotated, rect, copyOnly ? OverlayConfirmAction.CopyOnly : OverlayConfirmAction.Default));
         _capture.PinRequested = image =>
@@ -155,6 +179,7 @@ public partial class App : System.Windows.Application
         ApplyClipboardWatcher();
 
         UpdateTrayPinState();
+        _tray.SyncRecentColors(_colorHistory.Items);
 
         var hotkeyResults = ApplyHotkeys();
         EnsureAutoStartState();
@@ -343,7 +368,7 @@ public partial class App : System.Windows.Application
         var builder = new System.Text.StringBuilder();
         var monitors = _capture is null ? [] : PinMonitorList();
 
-        builder.AppendLine($"版本　　　　WhSnap 0.4.0-preview.1（{Environment.OSVersion.VersionString}）");
+        builder.AppendLine($"版本　　　　WhSnap 0.5.0-preview.1（{Environment.OSVersion.VersionString}）");
         builder.AppendLine($"进程　　　　{(Environment.Is64BitProcess ? "x64" : "x86")}　PID {Environment.ProcessId}");
         builder.AppendLine($"虚拟桌面　　{_pins?.Desktop}　显示器 {monitors.Count} 台");
         builder.AppendLine($"最近后端　　{_settings?.Current.CaptureBackend}");
@@ -459,6 +484,48 @@ public partial class App : System.Windows.Application
         {
             Log.Error("打开贴图标注失败", ex);
             _tray?.ShowBalloon("WhSnap 出错了", ex.Message, warning: true);
+        }
+    }
+
+    /// <summary>把颜色历史写回配置（去抖，避免连续取色时频繁落盘）。</summary>
+    private void PersistColorHistory()
+    {
+        if (_settings is null)
+        {
+            return;
+        }
+
+        _settings.Current.ColorHistoryText = _colorHistory.Serialize();
+        _settingsSaveTimer ??= new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
+        _settingsSaveTimer.Stop();
+        _settingsSaveTimer.Tick -= OnSettingsSaveTick;
+        _settingsSaveTimer.Tick += OnSettingsSaveTick;
+        _settingsSaveTimer.Start();
+    }
+
+    private void OnSettingsSaveTick(object? sender, EventArgs e)
+    {
+        _settingsSaveTimer?.Stop();
+        _settings?.Save();
+    }
+
+    /// <summary>托盘「最近颜色」：按设置里的表示法复制到剪贴板。</summary>
+    private void CopyColorFromHistory(RgbColor color)
+    {
+        var format = ColorText.ParseFormat(_settings?.Current.ColorCopyFormat);
+        string text = ColorText.Format(color, format);
+
+        _colorHistory.Add(color);
+        PersistColorHistory();
+        _tray?.SyncRecentColors(_colorHistory.Items);
+
+        if (ClipboardService.TrySetText(text, out string error))
+        {
+            _tray?.ShowBalloon("颜色已复制", text.Replace(Environment.NewLine, "　", StringComparison.Ordinal));
+        }
+        else
+        {
+            _tray?.ShowBalloon("复制颜色失败", error, warning: true);
         }
     }
 

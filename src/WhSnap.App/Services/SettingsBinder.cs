@@ -146,7 +146,7 @@ internal static class SettingsBinder
         {
             if (property.Name is nameof(AppSettings.SchemaVersion) or nameof(AppSettings.Hotkey)
                 or nameof(AppSettings.Hotkeys) or nameof(AppSettings.DisabledHotkeys)
-                or nameof(AppSettings.HotkeyConflictPolicy))
+                or nameof(AppSettings.HotkeyConflictPolicy) or nameof(AppSettings.ColorHistoryText))
             {
                 continue;
             }

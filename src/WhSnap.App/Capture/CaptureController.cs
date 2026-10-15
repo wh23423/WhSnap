@@ -19,6 +19,12 @@ internal sealed class CaptureController(SettingsService settings)
     /// <summary>用户按了「进入标注」：宿主打开标注编辑器，完成后回调 <see cref="CompleteConfirmed"/>。</summary>
     public event Action<BitmapSource, PhysicalRect>? AnnotateRequested;
 
+    /// <summary>取到颜色（取色器）。宿主负责持久化颜色历史与刷新托盘菜单。</summary>
+    public event Action<RgbColor>? ColorPicked;
+
+    /// <summary>颜色历史（与托盘「最近颜色」共用同一个实例）。</summary>
+    public ColorHistory ColorHistory { get; set; } = new();
+
     /// <summary>贴图回调（由 App 注入 <c>PinManager.CreatePin</c>）。返回 false 表示贴图失败。</summary>
     public Func<BitmapSource, bool>? PinRequested { get; set; }
 
@@ -27,7 +33,8 @@ internal sealed class CaptureController(SettingsService settings)
 
     public bool IsBusy => _overlay is not null;
 
-    public void Start()
+    /// <summary>开始一次截图会话；<paramref name="colorPickMode"/> 为 true 时只做取色（托盘「取色器」）。</summary>
+    public void Start(bool colorPickMode = false)
     {
         if (_overlay is not null)
         {
@@ -58,8 +65,11 @@ internal sealed class CaptureController(SettingsService settings)
                 Log.Warn("检测到受保护内容被系统屏蔽，截图可能包含黑块。");
             }
 
-            var session = new OverlaySession(frame, monitor, _settings.Current, KeyBindings);
+            var session = new OverlaySession(frame, monitor, _settings.Current, KeyBindings, ColorHistory, colorPickMode);
             _overlay = session;
+
+            session.StatusReported += (message, warning) => StatusReported?.Invoke(message, warning);
+            session.ColorPicked += color => ColorPicked?.Invoke(color);
 
             session.Confirmed += (image, rect, action) =>
             {

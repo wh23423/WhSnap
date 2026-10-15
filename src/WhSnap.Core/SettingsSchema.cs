@@ -58,6 +58,24 @@ public static class SettingsSchema
         new("SaveOnCapture", "截图", "确认后保存文件", SettingKind.Bool, "按 Enter 确认时执行。"),
         new("PinOnCapture", "截图", "确认后直接贴图", SettingKind.Bool, "开启后 Enter 会同时贴图；也可在遮罩里按 F3 只贴图。"),
         new("OverlayDimOpacity", "截图", "遮罩暗度", SettingKind.Int, "选区以外区域的压暗程度。", 0, 90, 5, "%"),
+        new("ElementDetectionEnabled", "截图", "启用元素检测", SettingKind.Bool,
+            "遮罩显示时自动高亮光标下的界面元素；单击即可选中该元素，Tab 由内向外切换候选。"),
+        new("ElementDetectionUseUia", "截图", "元素检测使用 UI Automation", SettingKind.Bool,
+            "开启后能识别按钮/输入框等真实控件；关闭则只按顶层窗口矩形检测（更快，但粒度粗）。"),
+
+        // ---- 取色器 ----
+        new("ColorCopyFormat", "取色器", "复制颜色时的表示法", SettingKind.Choice,
+            "在遮罩里按 C 取色时复制到剪贴板的格式。",
+            Options:
+            [
+                new("hex", "#RRGGBB（推荐）"),
+                new("rgb", "rgb(r, g, b)"),
+                new("hsl", "hsl(h, s%, l%)"),
+                new("cmyk", "cmyk(c%, m%, y%, k%)"),
+                new("all", "四种表示法（多行）"),
+            ]),
+        new("ColorHistoryRetention", "取色器", "颜色历史条数", SettingKind.Int, "最近取过的颜色，可在遮罩与托盘里复用。", 1, 64, 1, "个"),
+        new("OverlayShowColorHistory", "取色器", "遮罩里显示颜色历史", SettingKind.Bool, "在遮罩左下角显示最近取到的颜色块。"),
 
         // ---- 保存 ----
         new("SaveDirectory", "保存", "默认保存目录", SettingKind.DirectoryPath, "留空则用「图片\\WhSnap」。"),

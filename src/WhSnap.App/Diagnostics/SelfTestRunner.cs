@@ -26,7 +26,7 @@ internal static class SelfTestRunner
         var failures = new List<string>();
 
         report.AppendLine($"WhSnap 自检　{DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-        report.AppendLine($"版本 0.4.0-preview.1　进程 {(Environment.Is64BitProcess ? "x64" : "x86")}");
+        report.AppendLine($"版本 0.5.0-preview.1　进程 {(Environment.Is64BitProcess ? "x64" : "x86")}");
         report.AppendLine(new string('-', 68));
 
         void Check(string name, Func<string> body)
