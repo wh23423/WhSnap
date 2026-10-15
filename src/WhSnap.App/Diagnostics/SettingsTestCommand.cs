@@ -18,7 +18,10 @@ namespace WhSnap.Diagnostics;
 ///   ① 每个 schema 项都有控件、每个动作都有热键行；
 ///   ② 导出 → 导入 无损（未知项/非法值为 0）；
 ///   ③ 键位录制对合法组合成立、对非法键（纯修饰键等）拒绝；
-///   ④ 恢复默认与 schema 双向一致性（SettingsBinder.VerifySchema）。
+///   ④ 恢复默认与 schema 双向一致性（SettingsBinder.VerifySchema）；
+///   ⑤ 更新链路可达：维护页显示版本号、有「检查更新」入口，本地清单能端到端跑出
+///      "发现新版本 9.9.9" 并写进界面，缺失/损坏/非法地址都给可读原因且不抛异常
+///      （等待异步结果用 AwaitWithPump，顺带证明没有在 UI 线程上同步阻塞）。
 /// 运行期间会短暂闪现设置窗口（约 1 秒）。
 /// </summary>
 internal static class SettingsTestCommand

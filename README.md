@@ -404,6 +404,28 @@ Get-Content "$env:TEMP\whsnap-update-test.txt" -Encoding UTF8
 `update.json`，不含任何本机信息）、`UpdateChannel`（stable / beta）、`UpdateAutoDownload`
 （默认关闭）、`UpdateManifestUrl`（默认取 GitHub Releases 最新版的 `update.json`，也可填本地路径做离线分发）。
 
+### 自动更新的用户入口
+
+更新链路（`Services/UpdateService.cs` + `Services/UpdateCoordinator.cs`）接在三条用户可达路径上，
+四个更新配置项全部由运行时消费（`--selftest`、`--update-test` 各有一条断言守住这一点）：
+
+| 入口 | 行为 |
+|---|---|
+| **启动后异步检查** | 启动约 4 秒后（托盘/热键就绪后）在后台读一次清单；**不阻塞界面**，失败只写日志，发现新版本才弹气泡 |
+| **托盘「检查更新…」** | 手动检查，结果一定以气泡回报：发现新版本 / 已是最新 / 具体失败原因 |
+| **设置「维护」页** | 显示当前版本 + 更新通道 + 清单来源，带「检查更新」与「下载并安装」按钮，结论写在页面上 |
+
+发现新版本且 `UpdateAutoDownload` 为真时：下载到临时目录 → 校验 SHA-256（对不上就删除并拒绝安装）
+→ 弹窗询问「现在安装吗」→ 是则**先退出 WhSnap** 再静默运行安装包（per-user 安装，不需要管理员权限）。
+
+想在没有 Release 的情况下试一遍：把 `UpdateManifestUrl` 指向本地目录里的 `update.json`
+（`Url` 也填本地安装包路径即可），托盘点「检查更新…」或重启程序即可看到完整流程。
+
+自检覆盖（无需联网）：`--update-test` 校验按配置构造的服务能真的跑完一次检查；
+`--settings-test` 用本地清单驱动维护页，断言状态文字显示「发现新版本 9.9.9」、
+缺失/损坏/非法地址都给出可读失败原因且不抛异常，并用「边抽 Dispatcher 边等」的方式
+证明异步检查没有在 UI 线程上同步阻塞（进度快照 §7 第 7 条那个死锁坑）。
+
 ---
 
 ## 分发（自己 + 小圈子）
@@ -483,6 +505,6 @@ build/
 
 M0 预研与骨架 ✅ → M1 截图核心 ✅（多屏遮罩、WGC/DXGI/GDI）→ M2 贴图 ✅（`v0.2.0-preview`）→
 M3 快捷键设置与全配置化 ✅（`v0.3.0-preview`）→ M4 全量标注 ✅（`v0.4.0-preview`）→
-**M5 对标收尾 ✅**（`v0.5.0-preview`：元素检测、取色器与颜色历史、托盘细化）→ M6 发布工程化。
+**M5 对标收尾 ✅**（`v0.5.0-preview`：元素检测、取色器与颜色历史、托盘细化）→ M6 发布工程化（进行中）。
 
 详见 [项目规划方案](docs/whsnap-项目规划方案.md)。
