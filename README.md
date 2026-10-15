@@ -587,6 +587,13 @@ powershell -File build\tools\build-installer.ps1 -Version 1.0.0-preview.1 `
 不是"签名坏了"。静默安装 / 卸载 / 用户数据保留全部照旧。**例外**：`unins000.exe` 是 Inno 在安装时现场生成的，没有签名
 （要签它得在 `.iss` 里配 `SignTool`，预览版未做；卸载时可能仍显示「未知发布者」）。
 
+签名包可以直接跑一遍验收（静默安装 → 验签名/版本/手册/快捷方式 → 装机自检 → 静默卸载 → 证明机器干净）：
+
+```powershell
+powershell -File build\tools\verify-signed-install.ps1 -Version 1.0.0-preview.1
+# 退出码 0 = 全过；报告写到 %TEMP%\whsnap-signed-install-evidence.txt
+```
+
 接收方（每台机器一次，需管理员）：
 
 ```powershell
@@ -622,7 +629,8 @@ src/
   WhSnap.Core.Tests/    xUnit
 build/
   installer/            Inno Setup 脚本、信任导入脚本
-  tools/                图标生成、安装包构建、证书与签名、手册覆盖率校验（check-manual-coverage.ps1）
+  tools/                图标生成、安装包构建、证书与签名、签名版安装包验收（verify-signed-install.ps1）、
+                        手册覆盖率校验（check-manual-coverage.ps1）
 .github/workflows/      release
 ```
 
