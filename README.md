@@ -657,15 +657,18 @@ M5 对标收尾 ✅（`v0.5.0-preview`：元素检测、取色器与颜色历史
 安装包完善、用户手册、`update.json` 与 CI 资产。
 **发布收口 ✅（`v1.0.0-preview.2`）**：签名 Secret 已配、CI 产出**签名版** Release 与四类资产（含 `WhSnap.cer`）。
 
-**当前状态**：功能与发布工程均已完成。`v1.0.0-preview.2` 已在本机以 **CI 同款签名分支**（`-Sign -PfxBase64
--PfxPassword`）构建并通过端到端验收：装到磁盘的 `WhSnap.exe` 与 setup exe 都带 `CN=WhSnap` 自签名 + RFC3161
-（DigiCert）时间戳，安装 / 装机自检 20 PASS / 覆盖安装 / 卸载三连测全绿、卸载后用户数据保留；
-`v1.0.0-preview.1` 此前也已通过同样三连测（含 `/DELUSERDATA` 分支）。
+**当前状态**：功能与发布工程均已完成，**`v1.0.0-preview.2` 已发布（签名版）**。
+CI run `38788044031` **success**，Release 四类资产齐全（安装包 + `update.json` + `install-trust.ps1` + `WhSnap.cer`）；
+签名者 `CN=WhSnap` + DigiCert RFC3161 时间戳，线上安装包与线上 `.cer`、本机 `.pfx` 指纹三者一致。
+用**线上那个安装包**跑过完整验收：`ProductVersion 1.0.0-preview.2+f3a7136`、装机 `--selftest` 20 PASS / 0 FAIL、
+安装 / 覆盖 / 卸载后 0 残留且用户数据保留；`--update-test` 对线上清单全部通过。
+（`v1.0.0-preview.1` 是历史上的**未签名**包且缺 `.cer`，已被 preview.2 取代。）
 
-**CI 与发布**：签名 Secret `SIGNING_PFX_BASE64` / `SIGNING_PFX_PASSWORD` **已配置**；
-tag `v1.0.0-preview.1` 的 run `38751799936` 已 **success**，但那是**未签名**包且缺 `WhSnap.cer`
-（当时 Secret 未配）。打 tag `v1.0.0-preview.2` 后 CI 出的即为**签名版**并带齐四类资产。
-完整取证见 [项目进度报告](docs/项目进度报告.md)。
+> ⚠️ **改 CI 工作流要当心**：`release.yml` 里曾用数组 splat 给脚本传参
+> （`$buildArgs += @('-Version', ...)`），在 Actions 的 `pwsh` 7 下参数名会被当位置参数吞掉，
+> 导致 build 失败（`NETSDK1083`）。**本机只有 PowerShell 5.1，复现不了**。
+> 现在统一用 **hashtable splat**，请勿改回数组。
+> 完整取证见 [项目进度报告](docs/项目进度报告.md)。
 
 十个自检命令（`--selftest` / `--overlay-test` / `--pin-test` / `--settings-test` / `--annotate-test` /
 `--element-test` / `--update-test` / `--crash-test` / `--power-test` / `--diagnostics-pack`）全部 exit 0
