@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -9,31 +10,39 @@ using WhSnap.Capture;
 using WhSnap.Core;
 using WhSnap.Interop;
 using WhSnap.Services;
+using WhSnap.Theme;
 
 namespace WhSnap.Overlay;
 
 /// <summary>
-/// 单台显示器的遮罩窗口。
+/// 单台显示器的遮罩窗口（Focal 设计语言：「暗幕四块拼接 + 琥珀选区 + 11×11 放大镜 + 浮动工具条」）。
 ///
 /// 设计要点：选区模型是**会话级共享的虚拟桌面绝对物理坐标**，本窗口只负责
 /// "把共享选区在本显示器范围内的部分画出来"。因此：
 ///   * 跨屏拖拽天然成立——鼠标被按下时的那个窗口捕获鼠标，后续移动仍上报绝对坐标；
 ///   * 每台显示器只有一个窗口、一个 DPI 上下文，混合 DPI 下不会出现拉伸错位。
+///
+/// 颜色一律来自 <see cref="FocalPalette"/>（令牌唯一来源见 Theme/FocalTheme.xaml）。
 /// </summary>
 internal partial class OverlayWindow : System.Windows.Window
 {
-    private const double HandleSizeDip = 7;
     private const int MagnifierOffsetPx = 24;
+    private const int SizeLabelGapPx = 8;
 
     private readonly OverlaySession _session;
     private readonly CaptureFrame _frame;
     private readonly double _scale;
     private readonly int _dimOpacity;
+    private readonly double _handleSize;
     private readonly Rectangle[] _dim = new Rectangle[4];
     private readonly Rectangle[] _handles = new Rectangle[8];
     private readonly Rectangle _border;
+    private readonly Rectangle _borderRing;
     private readonly WriteableBitmap _magnifierBitmap;
     private readonly BitmapSource _frozenSlice;
+    private readonly int _loupeSample;
+    private readonly int _loupeZoom;
+    private bool _pointerStartedOnChrome;
 
     public OverlayWindow(OverlaySession session, CaptureFrame frame, MonitorInfo monitor, AppSettings settings)
     {
@@ -44,6 +53,7 @@ internal partial class OverlayWindow : System.Windows.Window
         Monitor = monitor;
         _scale = monitor.ScaleX <= 0 ? 1.0 : monitor.ScaleX;
         _dimOpacity = Math.Clamp(settings.OverlayDimOpacity, 0, 90);
+        _handleSize = FocalPalette.HandleSize;
 
         // 本显示器那一块冻结画面
         var localCrop = new Int32Rect(
@@ -60,8 +70,8 @@ internal partial class OverlayWindow : System.Windows.Window
         FrozenImage.Width = PhysicalToDip(monitor.Bounds.Width);
         FrozenImage.Height = PhysicalToDip(monitor.Bounds.Height);
 
-        var dimBrush = new SolidColorBrush(Color.FromArgb((byte)(_dimOpacity * 255 / 100), 0, 0, 0));
-        dimBrush.Freeze();
+        // 暗幕：浓度来自设置，颜色来自令牌（Focal.ScrimBrush）
+        var dimBrush = FocalPalette.Scrim(_dimOpacity);
 
         for (int i = 0; i < _dim.Length; i++)
         {
@@ -69,27 +79,39 @@ internal partial class OverlayWindow : System.Windows.Window
             Layer.Children.Add(_dim[i]);
         }
 
+        // 选区：琥珀 1px 实线 + 外侧 1px 暗线（保证压在浅色内容上也读得出边界）
+        _borderRing = new Rectangle
+        {
+            Stroke = FocalPalette.Brush("Focal.MeasureDarkRingBrush"),
+            StrokeThickness = 1,
+            Fill = null,
+            IsHitTestVisible = false,
+            Visibility = Visibility.Collapsed,
+        };
+        Layer.Children.Add(_borderRing);
+
         _border = new Rectangle
         {
-            Stroke = new SolidColorBrush(Color.FromRgb(0x3B, 0x9C, 0xFF)),
-            StrokeThickness = 1.5,
-            Fill = Brushes.Transparent,
+            Stroke = FocalPalette.MeasureSelect,
+            StrokeThickness = 1,
+            Fill = null,
             IsHitTestVisible = false,
             Visibility = Visibility.Collapsed,
         };
         Layer.Children.Add(_border);
 
-        var handleFill = new SolidColorBrush(Color.FromRgb(0x3B, 0x9C, 0xFF));
-        var handleStroke = new SolidColorBrush(Colors.White);
-        handleFill.Freeze();
-        handleStroke.Freeze();
+        // 8 向手柄：7px 琥珀方块 + 1px 暗描边（方的是"点的"）
+        var handleFill = FocalPalette.MeasureSelect;
+        var handleStroke = FocalPalette.Brush("Focal.HandleRingBrush");
 
         for (int i = 0; i < _handles.Length; i++)
         {
             _handles[i] = new Rectangle
             {
-                Width = HandleSizeDip,
-                Height = HandleSizeDip,
+                Width = _handleSize,
+                Height = _handleSize,
+                RadiusX = 1,
+                RadiusY = 1,
                 Fill = handleFill,
                 Stroke = handleStroke,
                 StrokeThickness = 1,
@@ -99,25 +121,27 @@ internal partial class OverlayWindow : System.Windows.Window
             Layer.Children.Add(_handles[i]);
         }
 
-        // 放大镜：源 31x31 物理像素，8 倍最近邻放大
-        int sample = Magnifier.DefaultSampleSize;
-        int zoom = Magnifier.DefaultZoom;
-        _magnifierBitmap = new WriteableBitmap(sample, sample, 96, 96, PixelFormats.Bgra32, null);
+        // 放大镜：11×11 物理像素 @12x = 132px（DESIGN §8），最近邻放大
+        _loupeSample = (int)FocalPalette.Metric("Focal.LoupeSample");
+        _loupeZoom = (int)FocalPalette.Metric("Focal.LoupeZoom");
+
+        _magnifierBitmap = new WriteableBitmap(_loupeSample, _loupeSample, 96, 96, PixelFormats.Bgra32, null);
         MagnifierImage.Source = _magnifierBitmap;
 
-        double panelDip = PhysicalToDip(sample * zoom);
-        MagnifierPanel.Width = panelDip;
-        MagnifierPanel.Height = panelDip;
-        MagnifierRoot.Width = panelDip;
-        MagnifierRoot.Height = panelDip;
-        MagnifierImage.Width = panelDip;
-        MagnifierImage.Height = panelDip;
-        MagnifierGrid.Width = panelDip;
-        MagnifierGrid.Height = panelDip;
-        MagnifierCenter.Width = PhysicalToDip(zoom);
-        MagnifierCenter.Height = PhysicalToDip(zoom);
+        double loupeDip = FocalPalette.Metric("Focal.LoupeSize");
+        MagnifierRoot.Width = loupeDip;
+        MagnifierRoot.Height = loupeDip;
+        MagnifierImage.Width = loupeDip;
+        MagnifierImage.Height = loupeDip;
+        MagnifierGrid.Width = loupeDip;
+        MagnifierGrid.Height = loupeDip;
 
-        BuildMagnifierGrid(sample, zoom);
+        // 中心像素环 = 一个源像素 = zoom 物理像素
+        MagnifierCenter.Width = PhysicalToDip(_loupeZoom);
+        MagnifierCenter.Height = PhysicalToDip(_loupeZoom);
+
+        BuildMagnifierGrid(_loupeSample, _loupeZoom);
+        ApplyBindings();
 
         // 先把窗口放到目标显示器，让 WPF 从一开始就用该屏的 DPI 上下文
         Left = monitor.Bounds.X / _scale;
@@ -127,11 +151,46 @@ internal partial class OverlayWindow : System.Windows.Window
 
         SourceInitialized += (_, _) => ApplyPhysicalBounds();
         DpiChanged += (_, _) => ApplyPhysicalBounds();
+        _session.ToolChanged += OnToolChanged;
+        Closed += (_, _) => _session.ToolChanged -= OnToolChanged;
     }
 
     public MonitorInfo Monitor { get; }
 
-    internal int SampleSize => Magnifier.DefaultSampleSize;
+    internal int SampleSize => _loupeSample;
+
+    /// <summary>把当前键位绑定填进提示条与工具条键帽（键位可改，不能写死默认值）。</summary>
+    private void ApplyBindings()
+    {
+        SetKbd(HintTabKey, _session.KeyText("overlay.cycleElement"));
+        SetKbd(HintEnterKey, _session.KeyText("overlay.confirm"));
+        SetKbd(HintPinKey, _session.KeyText("overlay.pin"));
+        SetKbd(HintCancelKey, _session.KeyText("overlay.cancel"));
+        SetKbd(ActionCopyKey, _session.KeyText("overlay.copy"));
+        SetKbd(ActionSaveKey, _session.KeyText("overlay.save"));
+        SetKbd(ActionPinKey, _session.KeyText("overlay.pin"));
+        ApplyToolState();
+    }
+
+    /// <summary>键帽：未绑定的动作不显示空壳键帽。</summary>
+    private static void SetKbd(TextBlock text, string keys)
+    {
+        text.Text = keys;
+        if (text.Parent is Border cap)
+        {
+            cap.Visibility = string.IsNullOrWhiteSpace(keys) ? Visibility.Collapsed : Visibility.Visible;
+        }
+    }
+
+    private void ApplyToolState()
+    {
+        ToolRegion.IsChecked = _session.Tool == OverlayTool.Region;
+        ToolElement.IsChecked = _session.Tool == OverlayTool.Element;
+        ToolColor.IsChecked = _session.Tool == OverlayTool.Color;
+        ToolAnnotate.IsChecked = false;
+    }
+
+    private void OnToolChanged(OverlayTool tool) => ApplyToolState();
 
     /// <summary>用物理像素设置窗口位置与尺寸，绕开 WPF DIP 换算在多屏下的歧义。</summary>
     private void ApplyPhysicalBounds()
@@ -174,6 +233,13 @@ internal partial class OverlayWindow : System.Windows.Window
     {
         base.OnMouseLeftButtonDown(e);
 
+        // 浮动工具条上的点击属于"操作面"，不能同时开始框选
+        _pointerStartedOnChrome = IsOverChrome(e.OriginalSource as DependencyObject);
+        if (_pointerStartedOnChrome)
+        {
+            return;
+        }
+
         var absolute = ToAbsolutePhysical(e.GetPosition(this));
         CaptureMouse();
         _session.OnPointerPressed(absolute, e.ClickCount);
@@ -182,12 +248,25 @@ internal partial class OverlayWindow : System.Windows.Window
     protected override void OnMouseMove(System.Windows.Input.MouseEventArgs e)
     {
         base.OnMouseMove(e);
+
+        if (_pointerStartedOnChrome)
+        {
+            return;
+        }
+
         _session.OnPointerMoved(ToAbsolutePhysical(e.GetPosition(this)));
     }
 
     protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
     {
         base.OnMouseLeftButtonUp(e);
+
+        if (_pointerStartedOnChrome)
+        {
+            _pointerStartedOnChrome = false;
+            return;
+        }
+
         ReleaseMouseCapture();
         _session.OnPointerReleased();
     }
@@ -197,6 +276,49 @@ internal partial class OverlayWindow : System.Windows.Window
         base.OnMouseRightButtonUp(e);
         _session.Cancel();
     }
+
+    private bool IsOverChrome(DependencyObject? source)
+    {
+        while (source is not null)
+        {
+            if (ReferenceEquals(source, ToolbarBar) || ReferenceEquals(source, HintBar))
+            {
+                return true;
+            }
+
+            source = source is Visual or System.Windows.Media.Media3D.Visual3D
+                ? VisualTreeHelper.GetParent(source)
+                : LogicalTreeHelper.GetParent(source);
+        }
+
+        return false;
+    }
+
+    // ── 工具条 ────────────────────────────────────────────────────────────────
+
+    private void ToolRegion_Click(object sender, RoutedEventArgs e) => _session.SetTool(OverlayTool.Region);
+
+    private void ToolElement_Click(object sender, RoutedEventArgs e) => _session.SetTool(OverlayTool.Element);
+
+    private void ToolColor_Click(object sender, RoutedEventArgs e) => _session.SetTool(OverlayTool.Color);
+
+    private void ToolAnnotate_Click(object sender, RoutedEventArgs e)
+    {
+        ApplyToolState();
+        _session.RequestAnnotate();
+    }
+
+    private void ActionCopy_Click(object sender, RoutedEventArgs e) => _session.Confirm(OverlayConfirmAction.CopyOnly);
+
+    private void ActionSave_Click(object sender, RoutedEventArgs e) => _session.Confirm(OverlayConfirmAction.SaveOnly);
+
+    private void ActionPin_Click(object sender, RoutedEventArgs e) => _session.Confirm(OverlayConfirmAction.PinOnly);
+
+    private void ActionCancel_Click(object sender, RoutedEventArgs e) => _session.Cancel();
+
+    private void ActionConfirm_Click(object sender, RoutedEventArgs e) => _session.Confirm();
+
+    // ── 选区 / 暗幕 / 尺寸标签 ────────────────────────────────────────────────
 
     /// <summary>把共享的绝对选区渲染到本显示器范围内（暗化在选区以外的部分）。</summary>
     internal void RenderSelection(PhysicalRect absolute)
@@ -226,6 +348,8 @@ internal partial class OverlayWindow : System.Windows.Window
 
         bool visible = !absolute.IsEmpty;
         _border.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        _borderRing.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        SizeLabel.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
 
         if (!visible)
         {
@@ -237,10 +361,9 @@ internal partial class OverlayWindow : System.Windows.Window
             return;
         }
 
-        Canvas.SetLeft(_border, rect.Left);
-        Canvas.SetTop(_border, rect.Top);
-        _border.Width = rect.Width;
-        _border.Height = rect.Height;
+        SetRect(_border, rect);
+        // 外侧暗线：比选区大 1px、起点外移 1px
+        SetRect(_borderRing, new Rect(rect.Left - 1, rect.Top - 1, rect.Width + 2, rect.Height + 2));
 
         // 8 向手柄：只画落在本显示器可见范围内的那些（跨屏选区时另一部分由对方窗口画）
         double[] xs = [rect.Left, rect.Left + (rect.Width / 2), rect.Right];
@@ -260,26 +383,56 @@ internal partial class OverlayWindow : System.Windows.Window
                 double centerY = ys[row];
                 var handle = _handles[index++];
 
-                bool inside = centerX >= -HandleSizeDip && centerX <= fullWidth + HandleSizeDip
-                              && centerY >= -HandleSizeDip && centerY <= fullHeight + HandleSizeDip;
+                bool inside = centerX >= -_handleSize && centerX <= fullWidth + _handleSize
+                              && centerY >= -_handleSize && centerY <= fullHeight + _handleSize;
 
                 handle.Visibility = inside ? Visibility.Visible : Visibility.Collapsed;
 
                 if (inside)
                 {
-                    Canvas.SetLeft(handle, centerX - (HandleSizeDip / 2));
-                    Canvas.SetTop(handle, centerY - (HandleSizeDip / 2));
+                    Canvas.SetLeft(handle, centerX - (_handleSize / 2));
+                    Canvas.SetTop(handle, centerY - (_handleSize / 2));
                 }
             }
         }
+
+        UpdateSizeLabel(absolute, rect, fullWidth, fullHeight);
+    }
+
+    /// <summary>尺寸标签：内容永远是「宽 × 高 · x, y · 缩放」；上方放不下时翻到选区下方。</summary>
+    private void UpdateSizeLabel(PhysicalRect absolute, Rect rect, double fullWidth, double fullHeight)
+    {
+        SizeLabelSize.Text = $"{absolute.Width} × {absolute.Height}";
+        SizeLabelPosition.Text = $"{absolute.X}, {absolute.Y}";
+        SizeLabelScale.Text = string.Create(CultureInfo.InvariantCulture, $"{_scale * 100:0}%");
+
+        SizeLabel.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
+        var size = SizeLabel.DesiredSize;
+        double gap = PhysicalToDip(SizeLabelGapPx);
+
+        double labelTop = rect.Top - size.Height - gap;
+        double labelLeft = rect.Left;
+
+        // 上方会被屏幕边缘（或内容）挡住时翻到下方
+        if (labelTop < 0)
+        {
+            labelTop = Math.Min(rect.Bottom + gap, Math.Max(fullHeight - size.Height, 0));
+        }
+
+        labelLeft = Math.Clamp(labelLeft, 0, Math.Max(fullWidth - size.Width, 0));
+        labelTop = Math.Clamp(labelTop, 0, Math.Max(fullHeight - size.Height, 0));
+
+        Canvas.SetLeft(SizeLabel, labelLeft);
+        Canvas.SetTop(SizeLabel, labelTop);
     }
 
     /// <summary>渲染元素检测高亮（绝对物理坐标；跨屏时只画落在本显示器内的部分）。</summary>
-    internal void RenderElement(PhysicalRect? absolute)
+    internal void RenderElement(PhysicalRect? absolute, string? label = null)
     {
         if (absolute is not { } rect || rect.IsEmpty)
         {
             ElementBorder.Visibility = Visibility.Collapsed;
+            ElementLabelBorder.Visibility = Visibility.Collapsed;
             return;
         }
 
@@ -290,6 +443,7 @@ internal partial class OverlayWindow : System.Windows.Window
         if (visible.IsEmpty)
         {
             ElementBorder.Visibility = Visibility.Collapsed;
+            ElementLabelBorder.Visibility = Visibility.Collapsed;
             return;
         }
 
@@ -302,18 +456,28 @@ internal partial class OverlayWindow : System.Windows.Window
         ElementBorder.Width = PhysicalToDip(visible.Width);
         ElementBorder.Height = PhysicalToDip(visible.Height);
 
-        // 标签跟随元素左上角，超出屏幕时贴到内部
-        ElementLabel.Text = $"{rect.Width} × {rect.Height}　元素";
+        // 标签：元素名 + 尺寸，贴在元素外侧；上方放不下就翻到下方
+        ElementLabel.Text = string.IsNullOrWhiteSpace(label)
+            ? $"{rect.Width} × {rect.Height}"
+            : $"{label} · {rect.Width} × {rect.Height}";
+        ElementLabelBorder.Visibility = Visibility.Visible;
         ElementLabelBorder.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
         var labelSize = ElementLabelBorder.DesiredSize;
         double fullWidth = PhysicalToDip(Monitor.Bounds.Width);
         double fullHeight = PhysicalToDip(Monitor.Bounds.Height);
 
-        Canvas.SetLeft(ElementLabelBorder, Math.Clamp(left, 0, Math.Max(fullWidth - labelSize.Width, 0)));
-        Canvas.SetTop(ElementLabelBorder, Math.Clamp(top - labelSize.Height - 2, 0, Math.Max(fullHeight - labelSize.Height, 0)));
+        double labelLeft = Math.Clamp(left - 2, 0, Math.Max(fullWidth - labelSize.Width, 0));
+        double labelTop = top - labelSize.Height - 2;
+        if (labelTop < 0)
+        {
+            labelTop = Math.Min(top + PhysicalToDip(visible.Height) + 2, Math.Max(fullHeight - labelSize.Height, 0));
+        }
+
+        Canvas.SetLeft(ElementLabelBorder, labelLeft);
+        Canvas.SetTop(ElementLabelBorder, Math.Max(labelTop, 0));
     }
 
-    /// <summary>渲染颜色历史色块（左下角）。</summary>
+    /// <summary>渲染颜色历史色块（左下角）：颜色用眼睛找，不用一列文字。</summary>
     internal void RenderColorHistory(ColorHistory history, bool visible)
     {
         ColorHistoryStrip.Children.Clear();
@@ -326,14 +490,15 @@ internal partial class OverlayWindow : System.Windows.Window
 
         foreach (var color in history.Items.Take(12))
         {
-            var swatch = new Rectangle
+            var swatch = new Border
             {
                 Width = 16,
                 Height = 16,
                 Margin = new Thickness(2, 0, 2, 0),
-                Fill = new SolidColorBrush(Color.FromRgb(color.R, color.G, color.B)),
-                Stroke = new SolidColorBrush(Color.FromArgb(0x88, 0xFF, 0xFF, 0xFF)),
-                StrokeThickness = 1,
+                CornerRadius = FocalPalette.RadiusHair,
+                Background = FocalPalette.FromRgb(color),
+                BorderBrush = FocalPalette.HairlineDarkStrong,
+                BorderThickness = new Thickness(1),
             };
 
             swatch.ToolTip = ColorValue.Describe(color);
@@ -348,7 +513,7 @@ internal partial class OverlayWindow : System.Windows.Window
         Canvas.SetTop(ColorHistoryPanel, Math.Max(fullHeight - size.Height - PhysicalToDip(16), 0));
     }
 
-    /// <summary>更新光标相关 HUD。只有光标确实位于本显示器时才绘制放大镜/色值/尺寸。</summary>
+    /// <summary>更新光标相关 HUD：放大镜 + 四行读数。只有光标确实位于本显示器时才绘制。</summary>
     internal void RenderCursor(PhysicalPoint absolute)
     {
         bool inside = absolute.X >= Monitor.Bounds.X && absolute.X < Monitor.Bounds.Right
@@ -357,12 +522,10 @@ internal partial class OverlayWindow : System.Windows.Window
         if (!inside)
         {
             MagnifierPanel.Visibility = Visibility.Collapsed;
-            HudBorder.Visibility = Visibility.Collapsed;
-            ColorBorder.Visibility = Visibility.Collapsed;
             return;
         }
 
-        var layout = Magnifier.Compute(absolute, Monitor.Bounds, Magnifier.DefaultSampleSize, Magnifier.DefaultZoom);
+        var layout = Magnifier.Compute(absolute, Monitor.Bounds, _loupeSample, _loupeZoom);
         var pixels = ReadPixels(layout.Source);
         _magnifierBitmap.WritePixels(
             new Int32Rect(0, 0, layout.SampleSize, layout.SampleSize),
@@ -374,32 +537,11 @@ internal partial class OverlayWindow : System.Windows.Window
         Canvas.SetLeft(MagnifierCenter, PhysicalToDip(centerX * layout.Zoom));
         Canvas.SetTop(MagnifierCenter, PhysicalToDip(centerY * layout.Zoom));
 
-        // 放大镜与色值跟随光标，超出窗口时自动翻到另一侧
-        double cursorDipX = PhysicalToDip(absolute.X - Monitor.Bounds.X);
-        double cursorDipY = PhysicalToDip(absolute.Y - Monitor.Bounds.Y);
-        double fullWidth = PhysicalToDip(Monitor.Bounds.Width);
-        double fullHeight = PhysicalToDip(Monitor.Bounds.Height);
-        double offset = PhysicalToDip(MagnifierOffsetPx);
-
-        double panelLeft = cursorDipX + offset;
-        double panelTop = cursorDipY + offset;
-
-        if (panelLeft + MagnifierPanel.Width > fullWidth)
-        {
-            panelLeft = cursorDipX - offset - MagnifierPanel.Width;
-        }
-
-        if (panelTop + MagnifierPanel.Height > fullHeight)
-        {
-            panelTop = cursorDipY - offset - MagnifierPanel.Height;
-        }
-
-        panelLeft = Math.Clamp(panelLeft, 0, Math.Max(fullWidth - MagnifierPanel.Width, 0));
-        panelTop = Math.Clamp(panelTop, 0, Math.Max(fullHeight - MagnifierPanel.Height, 0));
-
-        MagnifierPanel.Visibility = Visibility.Visible;
-        Canvas.SetLeft(MagnifierPanel, panelLeft);
-        Canvas.SetTop(MagnifierPanel, panelTop);
+        // 读数：坐标 / 选区 / 色值 / 缩放
+        var selection = _session.CurrentSelection;
+        ReadoutPosition.Text = $"{absolute.X}, {absolute.Y}";
+        ReadoutSelection.Text = selection.IsEmpty ? "—" : $"{selection.Width} × {selection.Height}";
+        ReadoutZoom.Text = string.Create(CultureInfo.InvariantCulture, $"1 : {_scale:0.##}");
 
         // 色值：取放大镜中心像素（即光标所在像素）
         int centerIndex = ((centerY * layout.SampleSize) + centerX) * 4;
@@ -408,26 +550,41 @@ internal partial class OverlayWindow : System.Windows.Window
             byte b = pixels[centerIndex];
             byte g = pixels[centerIndex + 1];
             byte r = pixels[centerIndex + 2];
-            ColorText.Text = $"#{r:X2}{g:X2}{b:X2}　({r},{g},{b})";
+            ReadoutColor.Text = $"#{r:X2}{g:X2}{b:X2}";
+            ReadoutSwatch.Background = FocalPalette.BrushColor(r, g, b);
         }
 
-        ColorBorder.Visibility = Visibility.Visible;
-        Canvas.SetLeft(ColorBorder, panelLeft);
-        Canvas.SetTop(ColorBorder, panelTop + MagnifierPanel.Height + 4);
+        // 放大镜跟随光标，超出屏幕时自动翻到另一侧
+        double cursorDipX = PhysicalToDip(absolute.X - Monitor.Bounds.X);
+        double cursorDipY = PhysicalToDip(absolute.Y - Monitor.Bounds.Y);
+        double fullWidth = PhysicalToDip(Monitor.Bounds.Width);
+        double fullHeight = PhysicalToDip(Monitor.Bounds.Height);
+        double offset = PhysicalToDip(MagnifierOffsetPx);
 
-        // 尺寸提示：有选区时显示尺寸与左上角绝对坐标，否则显示光标坐标
-        var selection = _session.CurrentSelection;
-        HudText.Text = selection.IsEmpty
-            ? $"{absolute.X}, {absolute.Y}"
-            : $"{selection.Width} × {selection.Height}　@{selection.X},{selection.Y}";
+        MagnifierPanel.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
+        var panelSize = MagnifierPanel.DesiredSize;
+        MagnifierPanel.Width = panelSize.Width;
+        MagnifierPanel.Height = panelSize.Height;
 
-        HudBorder.Visibility = Visibility.Visible;
-        HudBorder.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
-        var size = HudBorder.DesiredSize;
-        double hudLeft = Math.Clamp(cursorDipX + offset, 0, Math.Max(fullWidth - size.Width, 0));
-        double hudTop = Math.Clamp(cursorDipY - offset - size.Height, 0, Math.Max(fullHeight - size.Height, 0));
-        Canvas.SetLeft(HudBorder, hudLeft);
-        Canvas.SetTop(HudBorder, hudTop);
+        double panelLeft = cursorDipX + offset;
+        double panelTop = cursorDipY + offset;
+
+        if (panelLeft + panelSize.Width > fullWidth)
+        {
+            panelLeft = cursorDipX - offset - panelSize.Width;
+        }
+
+        if (panelTop + panelSize.Height > fullHeight)
+        {
+            panelTop = cursorDipY - offset - panelSize.Height;
+        }
+
+        panelLeft = Math.Clamp(panelLeft, 0, Math.Max(fullWidth - panelSize.Width, 0));
+        panelTop = Math.Clamp(panelTop, 0, Math.Max(fullHeight - panelSize.Height, 0));
+
+        MagnifierPanel.Visibility = Visibility.Visible;
+        Canvas.SetLeft(MagnifierPanel, panelLeft);
+        Canvas.SetTop(MagnifierPanel, panelTop);
     }
 
     /// <summary>从本显示器的冻结切片里取出源区域的 BGRA 像素。</summary>
@@ -441,42 +598,32 @@ internal partial class OverlayWindow : System.Windows.Window
         return buffer;
     }
 
-    /// <summary>像素网格：每个源像素一格，帮助判断是否选到了想要的边界。</summary>
+    /// <summary>像素网格：每个源像素一格（1px 实线），让"这是一个像素"成立。</summary>
     private void BuildMagnifierGrid(int sample, int zoom)
     {
-        var brush = new SolidColorBrush(Color.FromArgb(0x38, 0xFF, 0xFF, 0xFF));
-        brush.Freeze();
+        var brush = FocalPalette.Brush("Focal.PixelGridBrush");
         double step = PhysicalToDip(zoom);
+        double full = PhysicalToDip(sample * zoom);
 
         for (int i = 1; i < sample; i++)
         {
             double offset = i * step;
 
-            MagnifierGrid.Children.Add(new Rectangle
-            {
-                Width = 1,
-                Height = PhysicalToDip(sample * zoom),
-                Fill = brush,
-            });
-
-            var vertical = (Rectangle)MagnifierGrid.Children[^1];
+            var vertical = new Rectangle { Width = 1, Height = full, Fill = brush };
+            MagnifierGrid.Children.Add(vertical);
             Canvas.SetLeft(vertical, offset);
             Canvas.SetTop(vertical, 0);
 
-            MagnifierGrid.Children.Add(new Rectangle
-            {
-                Width = PhysicalToDip(sample * zoom),
-                Height = 1,
-                Fill = brush,
-            });
-
-            var horizontal = (Rectangle)MagnifierGrid.Children[^1];
+            var horizontal = new Rectangle { Width = full, Height = 1, Fill = brush };
+            MagnifierGrid.Children.Add(horizontal);
             Canvas.SetLeft(horizontal, 0);
             Canvas.SetTop(horizontal, offset);
         }
     }
 
     private double PhysicalToDip(int physical) => physical / _scale;
+
+    private double PhysicalToDip(double physical) => physical / _scale;
 
     private PhysicalPoint ToAbsolutePhysical(System.Windows.Point dip) => new(
         Monitor.Bounds.X + (int)Math.Round(dip.X * _scale, MidpointRounding.AwayFromZero),

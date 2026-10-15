@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Focal · 设置</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../focal.css">
+<style>
+  /* 页面级：窗口骨架与两处预览控件 */
+  html, body { width: 980px; height: 680px; overflow: hidden; background: var(--linen); }
+  .st-body { flex: 1; display: flex; min-height: 0; }
+  .st-content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .st-scroll { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-md) var(--sp-xl) var(--sp-lg); }
+  .st-head { display: flex; align-items: baseline; gap: var(--sp-md); margin: var(--sp-md) 0 var(--sp-md); }
+  .st-head__hint { font-size: var(--fs-caption); color: var(--text-muted); }
+  .st-group { border: 1px solid var(--border); border-radius: var(--r-card); overflow: hidden; background: var(--surface-raised); }
+  /* 设置行收紧到 60px 上下：一屏能看完整组，不需要为了两行说明去滚动 */
+  .st-group .f-row { padding: 10px 18px; }
+  .st-group .f-row:last-child { border-bottom: 0; }
+  .st-group .f-row__hint { font-size: var(--fs-caption); line-height: 1.45; }
+  /* 遮罩暗度的小预览：把"45% 到底多黑"直接画出来 */
+  .st-dimpreview {
+    width: 58px; height: 28px; flex: none;
+    border-radius: var(--r-control);
+    border: 1px solid var(--border);
+    background: var(--linen);
+    position: relative; overflow: hidden;
+  }
+  .st-dimpreview i { position: absolute; left: 9px; top: 6px; width: 16px; height: 16px; border-radius: 2px; background: var(--accent); display: block; }
+  .st-dimpreview i + i { left: 31px; background: #57c7ff; }
+  .st-dimpreview::after { content: ""; position: absolute; inset: 0; background: var(--scrim); }
+  .st-value { font-family: var(--font-data); font-size: var(--fs-data); font-weight: 600; min-width: 42px; text-align: right; }
+  .st-foot { flex: none; height: 56px; display: flex; align-items: center; gap: var(--sp-sm); padding: 0 var(--sp-xl); border-top: 1px solid var(--border); background: var(--surface-sunken); }
+</style>
+</head>
+<body data-theme="obsidian">
+
+<div class="f-window" style="width:980px;height:680px;border-radius:0;border:0">
+
+  <div class="f-titlebar">
+    <svg class="f-i" style="color:var(--accent)"><use href="#i-gear"/></svg>
+    <span class="f-titlebar__title">WhSnap 设置</span>
+    <span class="f-titlebar__spacer"></span>
+    <div class="f-titlebar__actions">
+      <button class="f-winbtn"><svg class="f-i f-i--sm"><use href="#i-minus"/></svg></button>
+      <button class="f-winbtn"><svg class="f-i f-i--sm"><use href="#i-crop"/></svg></button>
+      <button class="f-winbtn f-winbtn--close"><svg class="f-i f-i--sm"><use href="#i-x"/></svg></button>
+    </div>
+  </div>
+
+  <div class="st-body">
+    <!-- 左栏：全部 11 个分组一次摊开（设置不该需要"猜在哪一页"） -->
+    <nav class="f-rail" style="width:200px">
+      <button class="f-rail__item" aria-current="true"><svg class="f-i"><use href="#i-crop"/></svg>截图<span class="f-rail__count">7</span></button>
+      <button class="f-rail__item"><svg class="f-i"><use href="#i-eyedropper"/></svg>取色器<span class="f-rail__count">3</span></button>
+      <button class="f-rail__item"><svg class="f-i"><use href="#i-save"/></svg>保存<span class="f-rail__count">3</span></button>
+      <button class="f-rail__item"><svg class="f-i"><use href="#i-pin"/></svg>贴图<span class="f-rail__count">10</span></button>
+      <button class="f-rail__item"><svg class="f-i"><use href="#i-clipboard"/></svg>剪贴板<span class="f-rail__count">1</span></button>
+      <button class="f-rail__item"><svg class="f-i"><use href="#i-text"/></svg>文本贴图<span class="f-rail__count">7</span></button>
+      <button class="f-rail__item"><svg class="f-i"><use href="#i-pencil"/></svg>标注<span class="f-rail__count">10</span></button>
+      <button class="f-rail__item"><svg class="f-i"><use href="#i-monitor"/></svg>系统<span class="f-rail__count">2</span></button>
+      <button class="f-rail__item"><svg class="f-i"><use href="#i-download"/></svg>更新<span class="f-rail__count">4</span></button>
+      <div class="f-rail__sep"></div>
+      <button class="f-rail__item"><svg class="f-i"><use href="#i-keyboard"/></svg>快捷键<span class="f-rail__count">46</span></button>
+      <button class="f-rail__item"><svg class="f-i"><use href="#i-speed"/></svg>维护</button>
+      <span class="f-grow"></span>
+      <div style="padding:var(--sp-sm) var(--sp-sm) var(--sp-2xs)">
+        <p class="f-caption" style="font-size:var(--fs-caption);line-height:1.5">所有改动即时生效并写入<br><span class="f-data" style="font-size:11px;color:var(--text-faint)">%APPDATA%\WhSnap</span></p>
+      </div>
+    </nav>
+
+    <div class="st-content">
+      <div class="st-scroll">
+
+        <!-- 热键冲突：真实存在于"三层冲突检测"，用语义色而不是装饰色 -->
+        <div class="f-banner f-banner--warn">
+          <svg class="f-i"><use href="#i-warning"/></svg>
+          <div class="f-banner__main">
+            <span class="f-banner__title">「取色并复制」与其它动作冲突，已按设置保存但停用</span>
+            冲突来源：系统级热键已被 <span class="f-data">Snipaste.exe</span> 注册（L1 试注册判定）。
+          </div>
+          <button class="f-btn f-btn--sm">换一个键位</button>
+          <button class="f-btn f-btn--sm f-btn--quiet">忽略</button>
+        </div>
+
+        <div class="st-head">
+          <h2 class="f-subtitle">截图</h2>
+          <span class="st-head__hint">7 项 · 采集后端、确认动作与元素检测</span>
+        </div>
+
+        <div class="st-group">
+          <div class="f-row">
+            <div class="f-row__main">
+              <span class="f-row__label">采集后端</span>
+              <span class="f-row__hint">自动按 WGC → DXGI → GDI 降级；录屏软件下抓不到时可手动指定。</span>
+            </div>
+            <div class="f-row__ctl"><select class="f-select" style="width:200px"><option>自动（推荐）</option><option>WGC（Windows.Graphics.Capture）</option><option>DXGI（Desktop Duplication）</option><option>GDI（BitBlt 兜底）</option></select></div>
+          </div>
+
+          <div class="f-row">
+            <div class="f-row__main">
+              <span class="f-row__label">确认后复制到剪贴板</span>
+              <span class="f-row__hint">同时写入 DIB 与 PNG 两种格式，粘到聊天窗口也不会糊。</span>
+            </div>
+            <div class="f-row__ctl"><button class="f-switch" role="switch" aria-checked="true" aria-label="确认后复制到剪贴板"></button></div>
+          </div>
+
+          <div class="f-row">
+            <div class="f-row__main">
+              <span class="f-row__label">确认后保存文件</span>
+              <span class="f-row__hint">按文件名模板落盘到默认目录，不弹另存为对话框。</span>
+            </div>
+            <div class="f-row__ctl"><button class="f-switch" role="switch" aria-checked="false" aria-label="确认后保存文件"></button></div>
+          </div>
+
+          <div class="f-row">
+            <div class="f-row__main">
+              <span class="f-row__label">确认后直接贴图</span>
+              <span class="f-row__hint">截图确认后立刻钉在屏幕上，等价于按 <span class="f-kbd">F3</span>。</span>
+            </div>
+            <div class="f-row__ctl"><button class="f-switch" role="switch" aria-checked="true" aria-label="确认后直接贴图"></button></div>
+          </div>
+
+          <div class="f-row">
+            <div class="f-row__main">
+              <span class="f-row__label">遮罩暗度</span>
+              <span class="f-row__hint">只影响未选中区域。屏幕本身很暗时可降到 30% 以下。</span>
+            </div>
+            <div class="f-row__ctl">
+              <span class="st-dimpreview"><i></i><i></i></span>
+              <input class="f-slider" type="range" min="0" max="90" value="45" style="width:132px">
+              <span class="st-value">45%</span>
+            </div>
+          </div>
+
+          <div class="f-row">
+            <div class="f-row__main">
+              <span class="f-row__label">启用元素检测</span>
+              <span class="f-row__hint">光标下的控件会高亮，单击即按控件边界选区。</span>
+            </div>
+            <div class="f-row__ctl"><button class="f-switch" role="switch" aria-checked="true" aria-label="启用元素检测"></button></div>
+          </div>
+
+          <div class="f-row">
+            <div class="f-row__main">
+              <span class="f-row__label">元素检测使用 UI Automation</span>
+              <span class="f-row__hint">关闭后只用窗口矩形回退：更快，但只能识别整窗。</span>
+            </div>
+            <div class="f-row__ctl"><button class="f-switch" role="switch" aria-checked="true" aria-label="元素检测使用 UI Automation"></button></div>
+          </div>
+        </div>
+
+        <p class="f-caption" style="margin-top:var(--sp-md);font-size:var(--fs-caption)">还有 <span class="f-data">21</span> 项在「保存 / 贴图 / 标注 / 更新」等分组里，左栏点开即可。</p>
+      </div>
+
+      <div class="f-statusbar">
+        <span class="f-dot"></span>
+        <span>配置已保存 · 28 项 · schema v3</span>
+        <span class="f-grow"></span>
+        <span class="f-data" style="font-size:11px;color:var(--text-faint)">C:\Users\28482\AppData\Roaming\WhSnap\settings.json</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="st-foot">
+    <button class="f-btn"><svg class="f-i"><use href="#i-keyboard"/></svg>检测热键占用</button>
+    <span class="f-grow"></span>
+    <button class="f-btn f-btn--quiet"><svg class="f-i"><use href="#i-upload"/></svg>导出配置…</button>
+    <button class="f-btn f-btn--quiet"><svg class="f-i"><use href="#i-download"/></svg>导入配置…</button>
+    <button class="f-btn f-btn--danger">恢复默认</button>
+    <button class="f-btn f-btn--primary"><svg class="f-i"><use href="#i-check"/></svg>完成</button>
+  </div>
+</div>
+
+<script src="../icons.js"></script>
+</body>
+</html>

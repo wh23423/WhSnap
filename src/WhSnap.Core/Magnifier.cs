@@ -16,8 +16,14 @@ public readonly record struct MagnifierLayout(PhysicalRect Source, int SampleSiz
 /// </summary>
 public static class Magnifier
 {
-    public const int DefaultSampleSize = 31;
-    public const int DefaultZoom = 8;
+    /// <summary>
+    /// 取源边长（物理像素，奇数以保证中心像素唯一）。11×11 @12x = 132px 放大镜，
+    /// 来自 Focal 设计规范 §8：放大镜读的是"单个物理像素"，格数太多反而看不清格子。
+    /// </summary>
+    public const int DefaultSampleSize = 11;
+
+    /// <summary>放大倍率。11×12 = 132px 的卢浮镜面。</summary>
+    public const int DefaultZoom = 12;
 
     public static MagnifierLayout Compute(
         PhysicalPoint cursor,

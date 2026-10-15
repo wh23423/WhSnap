@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Focal · 截图遮罩</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../focal.css">
+<style>
+  /* 本页只描述"被截图的内容"（虚拟桌面），不属于设计系统本身 */
+  html, body { width: 1440px; height: 900px; overflow: hidden; }
+  body { background: #e7e9ee; }
+
+  .desk { position: absolute; inset: 0; background: #e7e9ee; }
+  .desk::after { /* 桌面底纹：内容，不是 UI 装饰 */
+    content: ""; position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(20,22,26,.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(20,22,26,.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  .win {
+    position: absolute; left: 120px; top: 90px; width: 1200px; height: 720px;
+    background: #fff; border-radius: 10px; box-shadow: 0 20px 60px rgba(16,18,22,.18);
+    overflow: hidden; font-family: var(--font-text);
+  }
+  .win__bar { height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 14px; border-bottom: 1px solid #eceef1; }
+  .win__dots { display: flex; gap: 6px; }
+  .win__dots i { width: 10px; height: 10px; border-radius: 50%; background: #e2e5e9; display: block; }
+  .win__title { font-size: 12px; color: #8a9098; }
+  .win__body { display: flex; height: calc(100% - 40px); }
+  .side { width: 220px; border-right: 1px solid #eceef1; padding: 18px 14px; background: #fafbfc; }
+  .side__brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; color: #14161a; margin-bottom: 18px; }
+  .side__brand span { width: 20px; height: 20px; border-radius: 6px; background: #14161a; display: block; }
+  .side__item { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: 6px; font-size: 13px; color: #5b6169; }
+  .side__item.on { background: #eef0f3; color: #14161a; font-weight: 600; }
+  .side__item i { width: 14px; height: 14px; border-radius: 4px; background: #d7dbe0; display: block; }
+  .main { flex: 1; padding: 22px 32px 0; }
+  /* 关键区域给定固定几何：设计稿是固定画布，尺寸必须可预测、可复算 */
+  .main__head { display: flex; align-items: center; gap: 12px; height: 38px; margin-bottom: 18px; }
+  .main__h1 { font-size: 19px; font-weight: 600; color: #14161a; letter-spacing: -.2px; }
+  .main__sub { font-size: 12px; color: #8a9098; }
+  .main__actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .btn-c { height: 30px; padding: 0 12px; border-radius: 6px; border: 1px solid #e2e5e9; background: #fff; font-size: 12px; color: #14161a; display: inline-flex; align-items: center; gap: 6px; }
+  .btn-c--dark { background: #14161a; color: #fff; border-color: #14161a; }
+  .input-c { height: 30px; width: 200px; border-radius: 6px; border: 1px solid #e2e5e9; background: #fafbfc; display: flex; align-items: center; padding: 0 10px; gap: 8px; font-size: 12px; color: #a3a9b0; }
+  .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; height: 98px; }
+  .kpi { border: 1px solid #eceef1; border-radius: 10px; padding: 13px 16px; height: 98px; }
+  .kpi__k { font-size: 11px; letter-spacing: .4px; text-transform: uppercase; color: #8a9098; font-weight: 600; }
+  .kpi__v { font-size: 26px; font-weight: 600; color: #14161a; letter-spacing: -.5px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .kpi__d { font-size: 12px; color: #2fb27c; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .kpi__d.dn { color: #e5484d; }
+  .cards { display: grid; grid-template-columns: 572px 1fr; gap: 24px; margin-top: 24px; }
+  .card { border: 1px solid #eceef1; border-radius: 10px; padding: 18px 20px; height: 280px; }
+  .card__t { font-size: 14px; font-weight: 600; color: #14161a; }
+  .card__s { font-size: 12px; color: #8a9098; margin-top: 2px; }
+  .chart { display: flex; align-items: flex-end; gap: 18px; height: 180px; margin-top: 22px; padding-bottom: 24px; position: relative; }
+  .chart__g { position: absolute; left: 0; right: 0; height: 1px; background: #f0f2f4; }
+  .bar { flex: 1; background: #cfd5dd; border-radius: 3px 3px 0 0; position: relative; }
+  .bar--hot { background: var(--accent); }
+  .bar span { position: absolute; left: 0; right: 0; bottom: -22px; text-align: center; font-size: 11px; color: #8a9098; }
+  .rows { margin-top: 20px; }
+  .row-c { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid #f0f2f4; font-size: 12px; color: #5b6169; }
+  .row-c i { width: 8px; height: 8px; border-radius: 50%; background: #d7dbe0; display: block; }
+  .row-c b { margin-left: auto; color: #14161a; font-variant-numeric: tabular-nums; }
+
+  /* 放大镜内的像素视图：11×11 物理像素 @12x */
+  .loupe-px { position: absolute; inset: 0; }
+</style>
+</head>
+<body data-theme="obsidian">
+
+<div class="ov-stage" style="width:1440px;height:900px">
+  <!-- 被截取的内容：一个虚构的浅色桌面应用 -->
+  <div class="ov-content">
+    <div class="desk"></div>
+    <div class="win">
+      <div class="win__bar">
+        <div class="win__dots"><i></i><i></i><i></i></div>
+        <div class="win__title">Insight · 季度经营看板</div>
+      </div>
+      <div class="win__body">
+        <aside class="side">
+          <div class="side__brand"><span></span>Insight</div>
+          <div class="side__item on"><i></i>总览</div>
+          <div class="side__item"><i></i>渠道</div>
+          <div class="side__item"><i></i>留存</div>
+          <div class="side__item"><i></i>营收</div>
+          <div class="side__item"><i></i>设置</div>
+        </aside>
+        <div class="main">
+          <div class="main__head">
+            <div>
+              <div class="main__h1">2026 Q1 经营看板</div>
+              <div class="main__sub">数据更新于 3 月 28 日 09:20</div>
+            </div>
+            <div class="main__actions">
+              <div class="input-c">搜索指标…</div>
+              <div class="btn-c">筛选</div>
+              <div class="btn-c btn-c--dark">导出</div>
+            </div>
+          </div>
+
+          <div class="kpis">
+            <div class="kpi"><div class="kpi__k">活跃用户</div><div class="kpi__v">128,430</div><div class="kpi__d">+12.4% 环比</div></div>
+            <div class="kpi"><div class="kpi__k">付费转化</div><div class="kpi__v">4.62%</div><div class="kpi__d dn">−0.31% 环比</div></div>
+            <div class="kpi"><div class="kpi__k">净收入</div><div class="kpi__v">¥2,914,880</div><div class="kpi__d">+8.1% 环比</div></div>
+          </div>
+
+          <div class="cards">
+            <div class="card">
+              <div class="card__t">月度净收入</div>
+              <div class="card__s">单位：万元 · 近 9 个月</div>
+              <div class="chart">
+                <div class="chart__g" style="bottom:24px"></div>
+                <div class="chart__g" style="bottom:68px"></div>
+                <div class="chart__g" style="bottom:112px"></div>
+                <div class="chart__g" style="bottom:156px"></div>
+                <div class="bar" style="height:56px"><span>7月</span></div>
+                <div class="bar" style="height:76px"><span>8月</span></div>
+                <div class="bar" style="height:66px"><span>9月</span></div>
+                <div class="bar" style="height:104px"><span>10月</span></div>
+                <div class="bar" style="height:120px"><span>11月</span></div>
+                <div class="bar" style="height:92px"><span>12月</span></div>
+                <div class="bar" style="height:138px"><span>1月</span></div>
+                <div class="bar" style="height:128px"><span>2月</span></div>
+                <div class="bar bar--hot" style="height:150px"><span>3月</span></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card__t">渠道分布</div>
+              <div class="card__s">按新增付费用户</div>
+              <div class="rows">
+                <div class="row-c"><i></i>自然搜索<b>38%</b></div>
+                <div class="row-c"><i></i>内容社区<b>27%</b></div>
+                <div class="row-c"><i></i>付费投放<b>19%</b></div>
+                <div class="row-c"><i></i>老客推荐<b>11%</b></div>
+                <div class="row-c"><i></i>其他<b>5%</b></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 暗幕：四块拼接，把选区"挖"出来（选区保持原始亮度） -->
+  <div class="ov-scrim" style="top:0;left:0;width:1440px;height:330px"></div>
+  <div class="ov-scrim" style="top:330px;left:0;width:372px;height:280px"></div>
+  <div class="ov-scrim" style="top:330px;left:944px;width:496px;height:280px"></div>
+  <div class="ov-scrim" style="top:610px;left:0;width:1440px;height:290px"></div>
+
+  <!-- 元素检测：光标下的控件（Tab 可切换候选） -->
+  <div class="ov-element" style="left:1240px;top:156px;width:48px;height:30px">
+    <div class="ov-element__tag">按钮 · 导出</div>
+  </div>
+
+  <!-- 选区：与"月度净收入"卡片边界严格重合（372,330 · 572×280） -->
+  <div class="ov-selection" style="left:372px;top:330px;width:572px;height:280px">
+    <div class="ov-handle ov-handle--nw"></div>
+    <div class="ov-handle ov-handle--n"></div>
+    <div class="ov-handle ov-handle--ne"></div>
+    <div class="ov-handle ov-handle--e"></div>
+    <div class="ov-handle ov-handle--se"></div>
+    <div class="ov-handle ov-handle--s"></div>
+    <div class="ov-handle ov-handle--sw"></div>
+    <div class="ov-handle ov-handle--w"></div>
+  </div>
+
+  <!-- 尺寸标签：默认贴选区上方；上方会被内容遮挡时自动翻到下方（这里演示翻转态） -->
+  <div class="ov-size" style="left:372px;top:618px">
+    <svg class="f-i f-i--sm"><use href="#i-ruler"/></svg>
+    <span>572 × 280</span>
+    <span class="ov-size__sep">·</span>
+    <span style="color:var(--on-dark-muted);font-weight:500">372, 330</span>
+    <span class="ov-size__sep">·</span>
+    <span style="color:var(--accent);font-weight:600">100%</span>
+  </div>
+
+  <!-- 放大镜：像素网格 + 中心像素环 + 四行读数 -->
+  <div class="ov-magnifier" style="left:1006px;top:486px">
+    <div class="ov-loupe">
+      <svg class="loupe-px" viewBox="0 0 132 132" preserveAspectRatio="none">
+        <!-- 放大后的物理像素：11×11 网格，中心像素正好压在"灰底 / 琥珀柱"的交界角上 -->
+        <rect x="0" y="0" width="132" height="132" fill="#fbfbfc"/>
+        <rect x="0" y="0" width="132" height="55" fill="#f4f5f7"/>
+        <rect x="0" y="55" width="66" height="11" fill="#e9ebee"/>
+        <rect x="66" y="55" width="66" height="11" fill="#f7c164"/>
+        <rect x="0" y="66" width="66" height="66" fill="#e4e7ea"/>
+        <rect x="66" y="66" width="66" height="66" fill="#f5a524"/>
+        <rect x="66" y="44" width="11" height="11" fill="#f0f2f4"/>
+        <rect x="55" y="66" width="11" height="11" fill="#eef0f2"/>
+        <!-- 物理像素网格：1px 实线，让"这是一个像素"成立 -->
+        <g stroke="rgba(20,22,26,.09)" stroke-width="1">
+          <path d="M11 0V132M22 0V132M33 0V132M44 0V132M55 0V132M66 0V132M77 0V132M88 0V132M99 0V132M110 0V132M121 0V132"/>
+          <path d="M0 11H132M0 22H132M0 33H132M0 44H132M0 55H132M0 66H132M0 77H132M0 88H132M0 99H132M0 110H132M0 121H132"/>
+        </g>
+      </svg>
+      <div class="ov-loupe__cross ov-loupe__cross--h"></div>
+      <div class="ov-loupe__cross ov-loupe__cross--v"></div>
+      <div class="ov-loupe__center"></div>
+    </div>
+    <div class="ov-readout">
+      <div class="ov-readout__row"><span class="ov-readout__k">坐标</span><span class="ov-readout__v">658, 470</span></div>
+      <div class="ov-readout__row"><span class="ov-readout__k">选区</span><span class="ov-readout__v">572 × 280</span></div>
+      <div class="ov-readout__row"><span class="ov-readout__k">色值</span><span class="ov-readout__v"><i class="ov-hexdot" style="background:#f5a524"></i>#F5A524</span></div>
+      <div class="ov-readout__row"><span class="ov-readout__k">缩放</span><span class="ov-readout__v">1 : 1</span></div>
+    </div>
+  </div>
+
+  <!-- 顶部提示：一次性把全部键位说清楚，之后不再出现 -->
+  <div class="ov-hint" style="left:50%;top:24px;transform:translateX(-50%)">
+    <svg class="f-i f-i--sm" style="color:var(--accent)"><use href="#i-info"/></svg>
+    <span>拖动框选</span><span style="color:var(--on-dark-faint)">·</span>
+    <span>单击选中元素</span>
+    <span class="f-keys"><span class="f-kbd">Tab</span>切换</span>
+    <span style="color:var(--on-dark-faint)">·</span>
+    <span>方向键微调</span><span style="color:var(--on-dark-faint)">·</span>
+    <span class="f-keys"><span class="f-kbd">Enter</span>确认</span>
+    <span class="f-keys"><span class="f-kbd">F3</span>贴图</span>
+    <span class="f-keys"><span class="f-kbd">Esc</span>取消</span>
+  </div>
+
+  <!-- 浮动工具条：遮罩上唯一的操作面。模式组（互斥）→ 动作组（快捷键）→ 结束组 -->
+  <div class="ov-toolbar" style="left:50%;top:832px;transform:translateX(-50%)">
+    <button class="f-tool f-tool--wide" aria-pressed="true" title="区域框选"><svg class="f-i"><use href="#i-crop"/></svg><span>区域</span></button>
+    <button class="f-tool f-tool--wide" title="元素检测（Tab 切换候选）"><svg class="f-i"><use href="#i-pointer"/></svg><span>元素</span></button>
+    <button class="f-tool f-tool--wide" title="取色并复制"><svg class="f-i"><use href="#i-eyedropper"/></svg><span>取色</span></button>
+    <span class="f-divider-v"></span>
+    <button class="f-tool f-tool--wide" title="进入标注编辑器"><svg class="f-i"><use href="#i-pencil"/></svg><span>标注</span></button>
+    <span class="f-divider-v"></span>
+    <button class="f-tool f-tool--wide"><svg class="f-i"><use href="#i-copy"/></svg><span>复制</span><span class="f-kbd">Ctrl C</span></button>
+    <button class="f-tool f-tool--wide"><svg class="f-i"><use href="#i-save"/></svg><span>保存</span><span class="f-kbd">Ctrl S</span></button>
+    <button class="f-tool f-tool--wide"><svg class="f-i"><use href="#i-pin"/></svg><span>贴图</span><span class="f-kbd">F3</span></button>
+    <span class="f-divider-v"></span>
+    <button class="f-btn f-btn--quiet"><svg class="f-i"><use href="#i-x"/></svg>取消</button>
+    <button class="f-btn f-btn--primary"><svg class="f-i"><use href="#i-check"/></svg>完成</button>
+  </div>
+</div>
+
+<script src="../icons.js"></script>
+</body>
+</html>

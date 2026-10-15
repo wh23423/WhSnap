@@ -1,40 +1,127 @@
 using System.Windows;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using WhSnap.Core;
+using WhSnap.Services;
+using WhSnap.Theme;
 
 namespace WhSnap.Pin;
 
-/// <summary>贴图管理面板中的一行。</summary>
+/// <summary>贴图管理面板中的一行（design/focal/surfaces/pin-panel.html 的 .f-item）。</summary>
 internal sealed class PinRow(PinWindow pin)
 {
     public PinWindow Pin { get; } = pin;
 
+    public bool IsHidden => Pin.IsHidden;
+
     public string ToggleText => Pin.IsHidden ? "显示" : "隐藏";
 
+    public string StateText => Pin.IsHidden ? "已隐藏" : "显示中";
+
+    /// <summary>状态列的补充说明（只在悬停提示里出现，不占行宽）。</summary>
+    public string StateHint => Pin.IsHidden
+        ? "这张贴图已收起，点「显示」恢复。"
+        : "这张贴图正钉在桌面上。";
+
+    /// <summary>单张操作的第一颗按钮：把这张贴图提到最上层（配合层级编号读）。</summary>
+    public string PinActionText => "置顶";
+
+    /// <summary>标题：有备份文件名（= 原始来源名）就用它，否则退到层级编号。</summary>
     public string Title
     {
         get
         {
-            var bounds = Pin.Bounds;
-            string state = Pin.IsHidden ? "隐藏" : "显示";
-            string flags = (Pin.State.ClickThrough ? "　穿透" : string.Empty)
-                           + (Pin.State.Thumbnail ? "　缩略图" : string.Empty)
-                           + (Pin.State.Opacity < 100 ? $"　{Pin.State.Opacity}%" : string.Empty)
-                           + (Pin.State.Rotation != PinRotation.None ? $"　{(int)Pin.State.Rotation * 90}°" : string.Empty);
-
-            return $"#{Pin.ZIndex + 1}　{Pin.State.SourceWidth}×{Pin.State.SourceHeight}　{bounds.X},{bounds.Y}　{state}{flags}";
+            string name = Path.GetFileNameWithoutExtension(Pin.BackupFileName ?? string.Empty);
+            return string.IsNullOrWhiteSpace(name) ? $"贴图 #{Pin.ZIndex + 1}" : name;
         }
     }
 
-    public string Detail =>
-        $"显示尺寸 {Pin.Bounds.Width}×{Pin.Bounds.Height}　缩放 {PinGeometry.EffectiveZoom(Pin.State) * 100:0}%"
-        + (Pin.State.FlipHorizontal ? "　水平翻转" : string.Empty)
-        + (Pin.State.FlipVertical ? "　垂直翻转" : string.Empty);
+    /// <summary>元信息（等宽 12）：宽×高 · 缩放 · 位置 · 状态标记。</summary>
+    public string Detail
+    {
+        get
+        {
+            var bounds = Pin.Bounds;
+            string flags = string.Empty;
+
+            if (Pin.State.ClickThrough)
+            {
+                flags += " · 穿透";
+            }
+
+            if (Pin.State.Thumbnail)
+            {
+                flags += " · 缩略图";
+            }
+
+            if (Pin.State.Opacity < 100)
+            {
+                flags += $" · {Pin.State.Opacity}%";
+            }
+
+            if (Pin.State.Rotation != PinRotation.None)
+            {
+                flags += $" · {(int)Pin.State.Rotation * 90}°";
+            }
+
+            if (Pin.State.FlipHorizontal)
+            {
+                flags += " · 水平翻转";
+            }
+
+            if (Pin.State.FlipVertical)
+            {
+                flags += " · 垂直翻转";
+            }
+
+            return $"{Pin.State.SourceWidth} × {Pin.State.SourceHeight} · "
+                   + $"{PinGeometry.EffectiveZoom(Pin.State) * 100:0}% · "
+                   + $"{bounds.X}, {bounds.Y}{flags}";
+        }
+    }
+
+    /// <summary>
+    /// 缩略块内容：不是"画一张示意图"，而是把这张贴图本身缩到 44×34（44 / 34 圆角块内的 UniformToFill）。
+    /// 源图比缩略块还小时直接用原图，避免无意义的重采样。
+    /// </summary>
+    public BitmapSource? Thumbnail
+    {
+        get
+        {
+            var source = Pin.Source;
+
+            try
+            {
+                double scale = Math.Min(88.0 / Math.Max(source.PixelWidth, 1), 68.0 / Math.Max(source.PixelHeight, 1));
+
+                if (scale >= 1 || !source.CanFreeze)
+                {
+                    return source;
+                }
+
+                var scaled = new TransformedBitmap(source, new ScaleTransform(scale, scale));
+                scaled.Freeze();
+                return scaled;
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"生成贴图缩略图失败：{ex.Message}");
+                return source;
+            }
+        }
+    }
+
+    /// <summary>这张贴图占的像素内存（宽 × 高 × 4 字节），概要行与状态栏的"内存"用它。</summary>
+    public long Bytes => (long)Pin.State.SourceWidth * Pin.State.SourceHeight * 4;
 }
 
 /// <summary>
 /// 贴图管理面板（§2.1 B「贴图数量与层级管理面板」）。
 /// 列出全部贴图的尺寸/位置/状态，可逐张置顶、隐藏、关闭，也可批量操作。
+/// 视觉落地 design/focal/surfaces/pin-panel.html：obsidian-900 机壳 / 标题栏 32 /
+/// 行高 40（双行）/ 缩略块 44×34 / 悬停才出操作 / 底部批量条 / 状态栏。
 /// 刷新做了去抖：拖动贴图时 Changed 事件很密集，没必要每帧重建列表。
 /// </summary>
 internal partial class PinPanelWindow : Window
@@ -91,13 +178,63 @@ internal partial class PinPanelWindow : Window
             .ToList();
 
         PinList.ItemsSource = rows;
+        // 空状态：列表空时给"人话 + 怎么产生贴图"，而不是一片黑
+        EmptyState.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
-        SummaryText.Text = _manager.Count == 0
-            ? "当前没有贴图。用托盘菜单「从剪贴板贴图」，或在截图遮罩里按 F3 贴图。"
-            : $"共 {_manager.Count} 张贴图，其中 {_manager.VisibleCount} 张显示中（列表按层级从上到下）。";
+        int total = _manager.Count;
+        int visible = _manager.VisibleCount;
+        string memory = FormatBytes(rows.Sum(row => row.Bytes));
+
+        SummaryCount.Text = total.ToString();
+        SummaryVisible.Text = visible.ToString();
+        SummaryMemory.Text = memory;
+
+        StatusVisible.Text = visible.ToString();
+        StatusTotal.Text = total.ToString();
+        StatusMemory.Text = memory;
+    }
+
+    /// <summary>内存读数走等宽：人类可读单位 + 一位小数（KB / MB）。</summary>
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes <= 0)
+        {
+            return "0 KB";
+        }
+
+        if (bytes >= 1024L * 1024L)
+        {
+            return $"{bytes / (1024.0 * 1024.0):0.0} MB";
+        }
+
+        return $"{bytes / 1024.0:0.0} KB";
     }
 
     private void Refresh_Click(object sender, RoutedEventArgs e) => Refresh();
+
+    private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount == 2)
+        {
+            WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+            return;
+        }
+
+        // 无边框窗口：标题栏拖动 = 移动窗口（最大化时先还原，避免"拖不动"）
+        if (WindowState == WindowState.Maximized)
+        {
+            WindowState = WindowState.Normal;
+        }
+
+        try
+        {
+            DragMove();
+        }
+        catch (InvalidOperationException)
+        {
+            // 鼠标已经抬起时 DragMove 会抛 —— 直接忽略，不影响其它交互
+        }
+    }
 
     private static PinWindow? Resolve(object sender) =>
         (sender as FrameworkElement)?.Tag as PinRow is { } row ? row.Pin : null;

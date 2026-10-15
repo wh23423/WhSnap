@@ -1,0 +1,348 @@
+<!--
+  WhSnap · Focal Design Language v1.0 · WPF 令牌字典
+  ===========================================================================
+  唯一色值/尺寸来源。界面代码（XAML 与 C#）里不允许出现字面量色值，
+  只允许 {StaticResource Focal.*}（C# 走 WhSnap.Theme.FocalPalette）。
+
+  本文件是 design/focal/theme/Theme.xaml 的落地副本：
+    * 键名与 design/focal/tokens.css 的变量一一对应（连字符转驼峰）；
+    * 设计包交付时未覆盖的令牌（accent-ring / accent-halo / spacing / icon 尺寸 / 动效时长
+      等 tokens.css 中已存在但 WPF 侧缺的项）在这里补齐，键名同样一一对应。
+  组件层（按钮 / 行 / 列表 / 菜单 / 开关等）在 FocalControls.xaml。
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+
+  <!-- ══════════════ 颜色 · 表面：Obsidian（暗色机壳） ══════════════ -->
+  <Color x:Key="Focal.VoidColor">#FF08090A</Color>
+  <Color x:Key="Focal.Obsidian900Color">#FF101114</Color>
+  <Color x:Key="Focal.Obsidian800Color">#FF16181C</Color>
+  <Color x:Key="Focal.Obsidian700Color">#FF1E2126</Color>
+  <Color x:Key="Focal.Obsidian600Color">#FF2A2E35</Color>
+  <!-- 画布底：遮罩舞台 / 标注画布（ov-stage / an-canvas） -->
+  <Color x:Key="Focal.CanvasColor">#FF0C0D10</Color>
+
+  <!-- ══════════════ 颜色 · 表面：Paper（纸色阅读面） ══════════════ -->
+  <Color x:Key="Focal.PaperColor">#FFFFFFFF</Color>
+  <Color x:Key="Focal.LinenColor">#FFF4F4F2</Color>
+  <Color x:Key="Focal.LinenDeepColor">#FFE9E9E5</Color>
+
+  <!-- ══════════════ 颜色 · 文字 ══════════════ -->
+  <Color x:Key="Focal.InkColor">#FF14161A</Color>
+  <Color x:Key="Focal.InkMutedColor">#FF5B6169</Color>
+  <Color x:Key="Focal.InkFaintColor">#FF8A9098</Color>
+  <Color x:Key="Focal.OnDarkColor">#FFF2F3F5</Color>
+  <Color x:Key="Focal.OnDarkMutedColor">#FFA9AEB6</Color>
+  <Color x:Key="Focal.OnDarkFaintColor">#FF767C85</Color>
+
+  <!-- ══════════════ 颜色 · 强调：Signal Amber（一族四档） ══════════════ -->
+  <Color x:Key="Focal.AccentColor">#FFF5A524</Color>
+  <Color x:Key="Focal.AccentHoverColor">#FFFFBB4A</Color>
+  <Color x:Key="Focal.AccentPressColor">#FFD98E15</Color>
+  <Color x:Key="Focal.AccentDeepColor">#FF8A5A0A</Color>
+  <Color x:Key="Focal.AccentInkColor">#FF1A1206</Color>
+
+  <!-- ══════════════ 颜色 · 语义（只出现在状态面） ══════════════ -->
+  <Color x:Key="Focal.SignalOkColor">#FF2FB27C</Color>
+  <Color x:Key="Focal.SignalWarnColor">#FFF5A524</Color>
+  <Color x:Key="Focal.SignalDangerColor">#FFE5484D</Color>
+
+  <!-- ══════════════ 颜色 · 量测标记（遮罩 / 标注，与主题无关） ══════════════ -->
+  <Color x:Key="Focal.MeasureSelectColor">#FFF5A524</Color>
+  <Color x:Key="Focal.MeasureElementColor">#FF57C7FF</Color>
+  <Color x:Key="Focal.MeasureCenterColor">#FFFFD34D</Color>
+
+  <!-- ══════════════ 画刷 ══════════════ -->
+  <SolidColorBrush x:Key="Focal.VoidBrush" Color="{StaticResource Focal.VoidColor}"/>
+  <SolidColorBrush x:Key="Focal.Obsidian900Brush" Color="{StaticResource Focal.Obsidian900Color}"/>
+  <SolidColorBrush x:Key="Focal.Obsidian800Brush" Color="{StaticResource Focal.Obsidian800Color}"/>
+  <SolidColorBrush x:Key="Focal.Obsidian700Brush" Color="{StaticResource Focal.Obsidian700Color}"/>
+  <SolidColorBrush x:Key="Focal.Obsidian600Brush" Color="{StaticResource Focal.Obsidian600Color}"/>
+  <SolidColorBrush x:Key="Focal.CanvasBrush" Color="{StaticResource Focal.CanvasColor}"/>
+  <SolidColorBrush x:Key="Focal.PaperBrush" Color="{StaticResource Focal.PaperColor}"/>
+  <SolidColorBrush x:Key="Focal.LinenBrush" Color="{StaticResource Focal.LinenColor}"/>
+  <SolidColorBrush x:Key="Focal.LinenDeepBrush" Color="{StaticResource Focal.LinenDeepColor}"/>
+
+  <SolidColorBrush x:Key="Focal.InkBrush" Color="{StaticResource Focal.InkColor}"/>
+  <SolidColorBrush x:Key="Focal.InkMutedBrush" Color="{StaticResource Focal.InkMutedColor}"/>
+  <SolidColorBrush x:Key="Focal.InkFaintBrush" Color="{StaticResource Focal.InkFaintColor}"/>
+  <SolidColorBrush x:Key="Focal.OnDarkBrush" Color="{StaticResource Focal.OnDarkColor}"/>
+  <SolidColorBrush x:Key="Focal.OnDarkMutedBrush" Color="{StaticResource Focal.OnDarkMutedColor}"/>
+  <SolidColorBrush x:Key="Focal.OnDarkFaintBrush" Color="{StaticResource Focal.OnDarkFaintColor}"/>
+
+  <SolidColorBrush x:Key="Focal.AccentBrush" Color="{StaticResource Focal.AccentColor}"/>
+  <SolidColorBrush x:Key="Focal.AccentHoverBrush" Color="{StaticResource Focal.AccentHoverColor}"/>
+  <SolidColorBrush x:Key="Focal.AccentPressBrush" Color="{StaticResource Focal.AccentPressColor}"/>
+  <SolidColorBrush x:Key="Focal.AccentDeepBrush" Color="{StaticResource Focal.AccentDeepColor}"/>
+  <SolidColorBrush x:Key="Focal.AccentInkBrush" Color="{StaticResource Focal.AccentInkColor}"/>
+
+  <SolidColorBrush x:Key="Focal.SignalOkBrush" Color="{StaticResource Focal.SignalOkColor}"/>
+  <SolidColorBrush x:Key="Focal.SignalWarnBrush" Color="{StaticResource Focal.SignalWarnColor}"/>
+  <SolidColorBrush x:Key="Focal.SignalDangerBrush" Color="{StaticResource Focal.SignalDangerColor}"/>
+  <SolidColorBrush x:Key="Focal.MeasureSelectBrush" Color="{StaticResource Focal.MeasureSelectColor}"/>
+  <SolidColorBrush x:Key="Focal.MeasureElementBrush" Color="{StaticResource Focal.MeasureElementColor}"/>
+  <SolidColorBrush x:Key="Focal.MeasureCenterBrush" Color="{StaticResource Focal.MeasureCenterColor}"/>
+
+  <!-- 发丝线：暗底用白色低透明度（纯灰线在任意内容上都会发脏），浅底用墨色低透明度 -->
+  <Color x:Key="Focal.HairlineDarkColor">#14FFFFFF</Color>
+  <Color x:Key="Focal.HairlineDarkStrongColor">#24FFFFFF</Color>
+  <Color x:Key="Focal.HairlineLightColor">#1A14161A</Color>
+  <Color x:Key="Focal.HairlineLightSoftColor">#0F14161A</Color>
+  <Color x:Key="Focal.InnerTopLightColor">#0FFFFFFF</Color>
+
+  <!-- 强调色的半透明档（tokens.css: accent-tint / accent-tint-2 / accent-ring / accent-halo / accent-border / accent-ink-muted） -->
+  <Color x:Key="Focal.AccentTintColor">#24F5A524</Color>
+  <Color x:Key="Focal.AccentTint2Color">#3DF5A524</Color>
+  <Color x:Key="Focal.AccentRingColor">#8CF5A524</Color>
+  <Color x:Key="Focal.AccentHaloColor">#38F5A524</Color>
+  <Color x:Key="Focal.AccentBorderColor">#66F5A524</Color>
+  <Color x:Key="Focal.AccentInkMutedColor">#9E1A1206</Color>
+
+  <!-- 语义色的低浓度底：横幅 / 危险按钮 hover -->
+  <Color x:Key="Focal.SignalOkFillColor">#1A2FB27C</Color>
+  <Color x:Key="Focal.SignalOkBorderColor">#662FB27C</Color>
+  <Color x:Key="Focal.SignalDangerFillColor">#1AE5484D</Color>
+  <Color x:Key="Focal.SignalDangerBorderColor">#66E5484D</Color>
+  <Color x:Key="Focal.SignalWarnFillColor">#24F5A524</Color>
+
+  <!-- 遮罩浮层专用 -->
+  <Color x:Key="Focal.ScrimColor">#73000000</Color>
+  <Color x:Key="Focal.CheckerColor">#09FFFFFF</Color>
+  <Color x:Key="Focal.HudColor">#EB08090A</Color>
+  <Color x:Key="Focal.HintSurfaceColor">#D108090A</Color>
+  <Color x:Key="Focal.ToolbarSurfaceColor">#F0101114</Color>
+  <Color x:Key="Focal.MeasureDarkRingColor">#8C000000</Color>
+  <Color x:Key="Focal.HandleRingColor">#99000000</Color>
+  <Color x:Key="Focal.PixelGridColor">#1714161A</Color>
+  <Color x:Key="Focal.LoupeCrossColor">#24FFFFFF</Color>
+  <Color x:Key="Focal.MeasureCenterFillColor">#29FFD34D</Color>
+  <Color x:Key="Focal.MeasureElementFillColor">#2457C7FF</Color>
+  <Color x:Key="Focal.MeasureElementInkColor">#FF06202E</Color>
+
+  <SolidColorBrush x:Key="Focal.HairlineDarkBrush" Color="{StaticResource Focal.HairlineDarkColor}"/>
+  <SolidColorBrush x:Key="Focal.HairlineDarkStrongBrush" Color="{StaticResource Focal.HairlineDarkStrongColor}"/>
+  <SolidColorBrush x:Key="Focal.HairlineLightBrush" Color="{StaticResource Focal.HairlineLightColor}"/>
+  <SolidColorBrush x:Key="Focal.HairlineLightSoftBrush" Color="{StaticResource Focal.HairlineLightSoftColor}"/>
+  <SolidColorBrush x:Key="Focal.InnerTopLightBrush" Color="{StaticResource Focal.InnerTopLightColor}"/>
+  <SolidColorBrush x:Key="Focal.AccentTintBrush" Color="{StaticResource Focal.AccentTintColor}"/>
+  <SolidColorBrush x:Key="Focal.AccentTint2Brush" Color="{StaticResource Focal.AccentTint2Color}"/>
+  <SolidColorBrush x:Key="Focal.AccentRingBrush" Color="{StaticResource Focal.AccentRingColor}"/>
+  <SolidColorBrush x:Key="Focal.AccentHaloBrush" Color="{StaticResource Focal.AccentHaloColor}"/>
+  <SolidColorBrush x:Key="Focal.AccentBorderBrush" Color="{StaticResource Focal.AccentBorderColor}"/>
+  <SolidColorBrush x:Key="Focal.AccentInkMutedBrush" Color="{StaticResource Focal.AccentInkMutedColor}"/>
+  <SolidColorBrush x:Key="Focal.SignalOkFillBrush" Color="{StaticResource Focal.SignalOkFillColor}"/>
+  <SolidColorBrush x:Key="Focal.SignalOkBorderBrush" Color="{StaticResource Focal.SignalOkBorderColor}"/>
+  <SolidColorBrush x:Key="Focal.SignalDangerFillBrush" Color="{StaticResource Focal.SignalDangerFillColor}"/>
+  <SolidColorBrush x:Key="Focal.SignalDangerBorderBrush" Color="{StaticResource Focal.SignalDangerBorderColor}"/>
+  <SolidColorBrush x:Key="Focal.SignalWarnFillBrush" Color="{StaticResource Focal.SignalWarnFillColor}"/>
+  <SolidColorBrush x:Key="Focal.ScrimBrush" Color="{StaticResource Focal.ScrimColor}"/>
+  <SolidColorBrush x:Key="Focal.CheckerBrush" Color="{StaticResource Focal.CheckerColor}"/>
+  <SolidColorBrush x:Key="Focal.HudBrush" Color="{StaticResource Focal.HudColor}"/>
+  <SolidColorBrush x:Key="Focal.HintSurfaceBrush" Color="{StaticResource Focal.HintSurfaceColor}"/>
+  <SolidColorBrush x:Key="Focal.ToolbarSurfaceBrush" Color="{StaticResource Focal.ToolbarSurfaceColor}"/>
+  <SolidColorBrush x:Key="Focal.MeasureDarkRingBrush" Color="{StaticResource Focal.MeasureDarkRingColor}"/>
+  <SolidColorBrush x:Key="Focal.HandleRingBrush" Color="{StaticResource Focal.HandleRingColor}"/>
+  <SolidColorBrush x:Key="Focal.PixelGridBrush" Color="{StaticResource Focal.PixelGridColor}"/>
+  <SolidColorBrush x:Key="Focal.LoupeCrossBrush" Color="{StaticResource Focal.LoupeCrossColor}"/>
+  <SolidColorBrush x:Key="Focal.MeasureCenterFillBrush" Color="{StaticResource Focal.MeasureCenterFillColor}"/>
+  <SolidColorBrush x:Key="Focal.MeasureElementFillBrush" Color="{StaticResource Focal.MeasureElementFillColor}"/>
+  <SolidColorBrush x:Key="Focal.MeasureElementInkBrush" Color="{StaticResource Focal.MeasureElementInkColor}"/>
+
+  <!-- ══════════════ 字体 ══════════════ -->
+  <FontFamily x:Key="Focal.DisplayFont">Segoe UI Variable Display, Segoe UI, Microsoft YaHei UI</FontFamily>
+  <FontFamily x:Key="Focal.TextFont">Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI</FontFamily>
+  <FontFamily x:Key="Focal.DataFont">Cascadia Code, Cascadia Mono, Consolas, Microsoft YaHei UI</FontFamily>
+
+  <sys:Double x:Key="Focal.DisplaySize">28</sys:Double>
+  <sys:Double x:Key="Focal.TitleSize">20</sys:Double>
+  <sys:Double x:Key="Focal.SubtitleSize">15</sys:Double>
+  <sys:Double x:Key="Focal.BodySize">14</sys:Double>
+  <sys:Double x:Key="Focal.CaptionSize">12</sys:Double>
+  <sys:Double x:Key="Focal.MicroSize">11</sys:Double>
+  <sys:Double x:Key="Focal.DataSize">13</sys:Double>
+  <sys:Double x:Key="Focal.DataLargeSize">20</sys:Double>
+  <sys:Double x:Key="Focal.KbdSize">11</sys:Double>
+  <sys:Double x:Key="Focal.BodyLineHeight">21</sys:Double>
+  <sys:Double x:Key="Focal.CaptionLineHeight">17</sys:Double>
+
+  <!-- ══════════════ 圆角（只有四级 + 全圆） ══════════════ -->
+  <CornerRadius x:Key="Focal.RadiusHair">2</CornerRadius>
+  <CornerRadius x:Key="Focal.RadiusControl">6</CornerRadius>
+  <CornerRadius x:Key="Focal.RadiusCard">10</CornerRadius>
+  <CornerRadius x:Key="Focal.RadiusPanel">14</CornerRadius>
+  <CornerRadius x:Key="Focal.RadiusFull">9999</CornerRadius>
+
+  <!-- ══════════════ 度量（桌面密度：控件 30 / 行 32 / 工具条 40 / 浮动条 44 / 标题栏 32） ══════════════ -->
+  <sys:Double x:Key="Focal.ControlHeight">30</sys:Double>
+  <sys:Double x:Key="Focal.ControlHeightLarge">34</sys:Double>
+  <sys:Double x:Key="Focal.ControlHeightSmall">26</sys:Double>
+  <sys:Double x:Key="Focal.RowHeight">32</sys:Double>
+  <sys:Double x:Key="Focal.RowHeightLarge">40</sys:Double>
+  <sys:Double x:Key="Focal.ToolbarHeight">40</sys:Double>
+  <sys:Double x:Key="Focal.FloatbarHeight">44</sys:Double>
+  <sys:Double x:Key="Focal.HintbarHeight">32</sys:Double>
+  <sys:Double x:Key="Focal.TitleBarHeight">32</sys:Double>
+  <sys:Double x:Key="Focal.StatusBarHeight">28</sys:Double>
+  <sys:Double x:Key="Focal.RailWidth">188</sys:Double>
+  <sys:Double x:Key="Focal.HandleSize">7</sys:Double>
+  <sys:Double x:Key="Focal.IconSm">14</sys:Double>
+  <sys:Double x:Key="Focal.IconMd">16</sys:Double>
+  <sys:Double x:Key="Focal.IconLg">20</sys:Double>
+  <sys:Double x:Key="Focal.IconXl">24</sys:Double>
+
+  <!-- 放大镜（DESIGN §8）：11×11 物理像素 @12x = 132px，中心像素环 11px -->
+  <sys:Double x:Key="Focal.LoupeSize">132</sys:Double>
+  <sys:Double x:Key="Focal.LoupeSample">11</sys:Double>
+  <sys:Double x:Key="Focal.LoupeZoom">12</sys:Double>
+  <sys:Double x:Key="Focal.LoupePadding">7</sys:Double>
+  <sys:Double x:Key="Focal.SizeLabelHeight">22</sys:Double>
+
+  <Thickness x:Key="Focal.RowPadding">18,10,18,10</Thickness>
+  <Thickness x:Key="Focal.ButtonPadding">12,0,12,0</Thickness>
+  <Thickness x:Key="Focal.PanelPadding">16</Thickness>
+  <Thickness x:Key="Focal.ContentPadding">20</Thickness>
+  <Thickness x:Key="Focal.RailItemPadding">0,0,8,0</Thickness>
+  <!-- 放大镜内边距：7（DESIGN §8 ov-magnifier padding） -->
+  <Thickness x:Key="Focal.LoupePaddingThickness">7</Thickness>
+
+  <!-- GridLength 版本：RowDefinition.Height / ColumnDefinition.Width 要 GridLength，
+       不能直接吃 sys:Double（那是运行期 XamlParseException，构建期查不出来） -->
+  <GridLength x:Key="Focal.TitleBarHeightLength">32</GridLength>
+  <GridLength x:Key="Focal.ToolbarHeightLength">40</GridLength>
+  <GridLength x:Key="Focal.FloatbarHeightLength">44</GridLength>
+  <GridLength x:Key="Focal.HintbarHeightLength">32</GridLength>
+  <GridLength x:Key="Focal.RowHeightLength">32</GridLength>
+  <GridLength x:Key="Focal.StatusBarHeightLength">28</GridLength>
+
+  <!-- ══════════════ 间距（4px 基） ══════════════ -->
+  <sys:Double x:Key="Focal.Space3xs">2</sys:Double>
+  <sys:Double x:Key="Focal.Space2xs">4</sys:Double>
+  <sys:Double x:Key="Focal.SpaceXs">6</sys:Double>
+  <sys:Double x:Key="Focal.SpaceSm">8</sys:Double>
+  <sys:Double x:Key="Focal.SpaceMd">12</sys:Double>
+  <sys:Double x:Key="Focal.SpaceLg">16</sys:Double>
+  <sys:Double x:Key="Focal.SpaceXl">20</sys:Double>
+  <sys:Double x:Key="Focal.Space2xl">24</sys:Double>
+  <sys:Double x:Key="Focal.Space3xl">32</sys:Double>
+  <sys:Double x:Key="Focal.Space4xl">40</sys:Double>
+  <sys:Double x:Key="Focal.Space5xl">56</sys:Double>
+  <sys:Double x:Key="Focal.Space6xl">72</sys:Double>
+
+  <!-- ══════════════ 层级（L0 平铺 / L1 机壳 / L2 对话框） ══════════════ -->
+  <!-- L1 机壳：只给浮在不可控内容之上的面（遮罩工具条 / 放大镜 / 尺寸标签 / 菜单） -->
+  <DropShadowEffect x:Key="Focal.ShadowChrome" BlurRadius="30" ShadowDepth="5" Direction="270" Opacity="0.55" Color="#000000"/>
+  <!-- L2 对话框：纸色面上的模态 -->
+  <DropShadowEffect x:Key="Focal.ShadowDialog" BlurRadius="48" ShadowDepth="8" Direction="270" Opacity="0.18" Color="#101216"/>
+  <!-- 产品影像落在表面上时的唯一投影（贴图窗口的内容层） -->
+  <DropShadowEffect x:Key="Focal.ShadowProduct" BlurRadius="30" ShadowDepth="5" Direction="270" Opacity="0.22" Color="#000000"/>
+
+  <!-- ══════════════ 文本样式 ══════════════ -->
+  <Style x:Key="Focal.DisplayText" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource Focal.DisplayFont}"/>
+    <Setter Property="FontSize" Value="{StaticResource Focal.DisplaySize}"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkBrush}"/>
+    <Setter Property="TextOptions.TextFormattingMode" Value="Ideal"/>
+  </Style>
+
+  <Style x:Key="Focal.TitleText" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource Focal.DisplayFont}"/>
+    <Setter Property="FontSize" Value="{StaticResource Focal.TitleSize}"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkBrush}"/>
+    <Setter Property="TextOptions.TextFormattingMode" Value="Ideal"/>
+  </Style>
+
+  <Style x:Key="Focal.SubtitleText" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource Focal.DisplayFont}"/>
+    <Setter Property="FontSize" Value="{StaticResource Focal.SubtitleSize}"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkBrush}"/>
+  </Style>
+
+  <Style x:Key="Focal.BodyText" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource Focal.TextFont}"/>
+    <Setter Property="FontSize" Value="{StaticResource Focal.BodySize}"/>
+    <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkBrush}"/>
+    <Setter Property="TextWrapping" Value="Wrap"/>
+    <Setter Property="LineHeight" Value="{StaticResource Focal.BodyLineHeight}"/>
+  </Style>
+
+  <!-- 中量强调一律 600，不出现 700 -->
+  <Style x:Key="Focal.BodyStrongText" TargetType="TextBlock" BasedOn="{StaticResource Focal.BodyText}">
+    <Setter Property="FontWeight" Value="SemiBold"/>
+  </Style>
+
+  <Style x:Key="Focal.CaptionText" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource Focal.TextFont}"/>
+    <Setter Property="FontSize" Value="{StaticResource Focal.CaptionSize}"/>
+    <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkMutedBrush}"/>
+    <Setter Property="TextWrapping" Value="Wrap"/>
+    <Setter Property="LineHeight" Value="{StaticResource Focal.CaptionLineHeight}"/>
+  </Style>
+
+  <!-- 小号大写标签：正字距（WPF 无 text-transform，文本本身写大写） -->
+  <Style x:Key="Focal.MicroText" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource Focal.TextFont}"/>
+    <Setter Property="FontSize" Value="{StaticResource Focal.MicroSize}"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkFaintBrush}"/>
+  </Style>
+
+  <!-- 数据：等宽 + 表格数字；坐标/尺寸/色值/快捷键/路径全部走这里 -->
+  <Style x:Key="Focal.DataText" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource Focal.DataFont}"/>
+    <Setter Property="FontSize" Value="{StaticResource Focal.DataSize}"/>
+    <Setter Property="FontWeight" Value="Medium"/>
+    <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkBrush}"/>
+    <Setter Property="Typography.NumeralAlignment" Value="Tabular"/>
+  </Style>
+
+  <Style x:Key="Focal.DataLargeText" TargetType="TextBlock" BasedOn="{StaticResource Focal.DataText}">
+    <Setter Property="FontSize" Value="{StaticResource Focal.DataLargeSize}"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+  </Style>
+
+  <Style x:Key="Focal.DataCaptionText" TargetType="TextBlock" BasedOn="{StaticResource Focal.DataText}">
+    <Setter Property="FontSize" Value="{StaticResource Focal.CaptionSize}"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+  </Style>
+
+  <Style x:Key="Focal.MutedText" TargetType="TextBlock" BasedOn="{StaticResource Focal.BodyText}">
+    <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkMutedBrush}"/>
+  </Style>
+
+  <Style x:Key="Focal.FaintText" TargetType="TextBlock" BasedOn="{StaticResource Focal.BodyText}">
+    <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkFaintBrush}"/>
+  </Style>
+
+  <!-- ══════════════ 键帽（20 高，底部 2px 模拟可按下的实体） ══════════════ -->
+  <Style x:Key="Focal.Kbd" TargetType="Border">
+    <Setter Property="Height" Value="20"/>
+    <Setter Property="MinWidth" Value="20"/>
+    <Setter Property="Padding" Value="5,0"/>
+    <Setter Property="Background" Value="{StaticResource Focal.Obsidian700Brush}"/>
+    <Setter Property="BorderBrush" Value="{StaticResource Focal.HairlineDarkStrongBrush}"/>
+    <Setter Property="BorderThickness" Value="1,1,1,2"/>
+    <Setter Property="CornerRadius" Value="4"/>
+  </Style>
+
+  <Style x:Key="Focal.KbdText" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource Focal.DataFont}"/>
+    <Setter Property="FontSize" Value="{StaticResource Focal.KbdSize}"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkMutedBrush}"/>
+    <Setter Property="VerticalAlignment" Value="Center"/>
+  </Style>
+
+  <!-- L1 机壳：浮在不可控内容之上的面（遮罩工具条 / 放大镜 / 尺寸标签 / 菜单 / 浮窗） -->
+  <Style x:Key="Focal.ChromeSurface" TargetType="Border">
+    <Setter Property="Background" Value="{StaticResource Focal.Obsidian800Brush}"/>
+    <Setter Property="BorderBrush" Value="{StaticResource Focal.HairlineDarkStrongBrush}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="CornerRadius" Value="{StaticResource Focal.RadiusPanel}"/>
+    <Setter Property="Effect" Value="{StaticResource Focal.ShadowChrome}"/>
+  </Style>
+
+</ResourceDictionary>

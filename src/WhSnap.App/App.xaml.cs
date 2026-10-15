@@ -43,6 +43,31 @@ public partial class App : System.Windows.Application
             return;
         }
 
+        if (e.Args.Any(a => a.Equals("--focal-test", StringComparison.OrdinalIgnoreCase)))
+        {
+            // Focal 设计一致性：令牌齐全 / 度量 / 图标几何 / 对比度红线 / 无字面量色值
+            Shutdown(Diagnostics.FocalTestCommand.Run());
+            return;
+        }
+
+        if (e.Args.Any(a => a.Equals("--focal-shots", StringComparison.OrdinalIgnoreCase)))
+        {
+            // 把令牌表 / 组件层 / 图标集真正渲染成 PNG，用于和 design/focal/shots/*.png 对照
+            TryGetArgument(e.Args, "--out", out string? shotsDirectory);
+            Shutdown(Diagnostics.FocalShotsCommand.Run(shotsDirectory));
+            return;
+        }
+
+        if (e.Args.Any(a => a.Equals("--onboarding-preview", StringComparison.OrdinalIgnoreCase)))
+        {
+            // 首次运行向导的目视验收：不读配置、不写配置，只按内置默认热键展示
+            var preview = new Onboarding.OnboardingWindow();
+            preview.PreloadBindings(HotkeyBindings.Resolve(scope: HotkeyScope.Global));
+            preview.Closed += (_, _) => Shutdown(0);
+            preview.Show();
+            return;
+        }
+
         if (e.Args.Any(a => a.Equals("--overlay-test", StringComparison.OrdinalIgnoreCase)))
         {
             Shutdown(Diagnostics.OverlayTestCommand.Run());
@@ -141,6 +166,9 @@ public partial class App : System.Windows.Application
             // 这个处理器之后进程就要结束了：dump 必须在这里同步写完
             CrashHandler.Write("域异常", args.ExceptionObject as Exception);
         };
+
+        // 首次运行判定必须在 Load 之前：Load 会把默认配置写盘
+        bool firstRun = !File.Exists(SettingsService.ConfigFilePath);
 
         _settings = new SettingsService();
         _settings.Load();
@@ -261,6 +289,12 @@ public partial class App : System.Windows.Application
 
         // 上次崩溃只提示一次（读完即删标记），并指向诊断包入口
         NotifyPreviousCrashIfAny();
+
+        // 首次运行（配置目录里还没有 settings.json）：先把热键与自启讲清楚，再让用户开始用
+        if (firstRun)
+        {
+            ShowOnboarding();
+        }
 
         if (e.Args.Any(a => a.Equals("--crash-now", StringComparison.OrdinalIgnoreCase)))
         {
@@ -406,6 +440,105 @@ public partial class App : System.Windows.Application
             Log.Error($"处理热键动作 {actionId} 失败", ex);
             _tray?.ShowBalloon("WhSnap 出错了", ex.Message, warning: true);
         }
+    }
+
+    /// <summary>
+    /// 首次运行向导（Focal 设计稿 surfaces/onboarding.html）。
+    /// 它只负责"把默认热键与自启讲清楚"：热键改动写回配置并立即重新注册，其余照旧。
+    /// </summary>
+    private void ShowOnboarding()
+    {
+        if (_settings is null)
+        {
+            return;
+        }
+
+        var onboarding = new Onboarding.OnboardingWindow();
+        onboarding.PreloadBindings(_settings.ResolveHotkeys());
+        onboarding.ManualRequested += (_, _) => OpenUserManual();
+        onboarding.ShowModal();
+
+        if (!onboarding.FinishedByUser && !onboarding.SkipRequested)
+        {
+            // 直接被关掉（Esc / 关闭按钮）：不写任何配置
+            return;
+        }
+
+        ApplyOnboardingResult(onboarding);
+    }
+
+    private void ApplyOnboardingResult(Onboarding.OnboardingWindow onboarding)
+    {
+        if (_settings is null)
+        {
+            return;
+        }
+
+        var settings = _settings.Current;
+        settings.Hotkeys ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        int changed = 0;
+        foreach (var binding in onboarding.RecordedHotkeys)
+        {
+            if (binding.IsBound && settings.Hotkeys.TryGetValue(binding.ActionId, out string? existing) && existing == binding.Keys)
+            {
+                continue;
+            }
+
+            if (binding.IsBound)
+            {
+                settings.Hotkeys[binding.ActionId] = binding.Keys!;
+                changed++;
+            }
+        }
+
+        settings.AutoStart = onboarding.StartWithWindows;
+        _settings.Save();
+
+        AutoStartService.SetEnabled(settings.AutoStart);
+        _tray?.SyncAutoStart(settings.AutoStart);
+
+        foreach (var failed in ApplyHotkeys().Where(result => result.Status == HotkeyStatus.ConflictWithSystem))
+        {
+            _tray?.ShowBalloon("热键已被占用", $"{failed.Message} 可在托盘「设置…」里改键。", warning: true);
+        }
+
+        Log.Info($"首次运行向导完成：热键改动 {changed} 项，开机自启={settings.AutoStart}。");
+    }
+
+    /// <summary>
+    /// 打开用户手册：安装版把手册放在应用目录（WhSnap.iss 的 MyAppManual），
+    /// 开发期则退回仓库里的 docs/whsnap-用户手册.md。
+    /// </summary>
+    private void OpenUserManual()
+    {
+        string[] candidates =
+        [
+            Path.Combine(AppContext.BaseDirectory, "whsnap-用户手册.md"),
+            Path.Combine(Environment.CurrentDirectory, "docs", "whsnap-用户手册.md"),
+        ];
+
+        foreach (string candidate in candidates)
+        {
+            if (!File.Exists(candidate))
+            {
+                continue;
+            }
+
+            try
+            {
+                Process.Start(new ProcessStartInfo(candidate) { UseShellExecute = true });
+                Log.Info($"已打开用户手册：{candidate}");
+                return;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("打开用户手册失败", ex);
+                break;
+            }
+        }
+
+        _tray?.ShowBalloon("用户手册", "没有找到手册文件；可在开始菜单里打开「WhSnap 用户手册」。", warning: true);
     }
 
     private void ShowSettings()

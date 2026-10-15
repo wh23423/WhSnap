@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Focal · 标注编辑器</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../focal.css">
+<style>
+  /* 页面级：仅定位与画布底纹，颜色/圆角/阴影全部来自令牌 */
+  html, body { width: 1280px; height: 800px; overflow: hidden; background: var(--obsidian-900); }
+  .an-body { flex: 1; display: flex; min-height: 0; }
+  .an-rail {
+    width: 92px; flex: none;
+    background: var(--obsidian-800);
+    border-right: 1px solid var(--border);
+    padding: var(--sp-sm) var(--sp-xs);
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .an-rail__sep { height: 1px; background: var(--border); margin: var(--sp-xs) var(--sp-sm); }
+  .an-rail__item {
+    height: 32px; flex: none;
+    display: flex; align-items: center; gap: var(--sp-sm);
+    padding: 0 var(--sp-sm);
+    border: 1px solid transparent;
+    border-radius: var(--r-control);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: var(--fs-caption);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background var(--dur-instant) var(--ease), color var(--dur-instant) var(--ease);
+  }
+  .an-rail__item .f-i { flex: none; }
+  .an-rail__item:hover { background: var(--obsidian-700); color: var(--text); }
+  .an-rail__item[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  .an-rail__item[aria-pressed="true"] .f-i { color: var(--accent-ink); }
+  .an-rail__key {
+    margin-left: auto; font-family: var(--font-data); font-size: 10px;
+    color: var(--text-faint); letter-spacing: 0;
+  }
+  .an-rail__item[aria-pressed="true"] .an-rail__key { color: rgba(26,18,6,.6); }
+
+  /* 画布：透明区用棋盘格（功能性底纹，不是装饰） */
+  .an-stage {
+    flex: 1; min-width: 0;
+    display: grid; place-items: center;
+    background:
+      repeating-conic-gradient(rgba(255,255,255,.035) 0% 25%, transparent 0% 50%) 0 0 / 16px 16px,
+      var(--void);
+    position: relative;
+  }
+  .an-shot { border-radius: var(--r-card); box-shadow: var(--shadow-chrome); display: block; }
+  .an-zoombadge {
+    position: absolute; right: var(--sp-lg); bottom: var(--sp-lg);
+    display: inline-flex; align-items: center; gap: var(--sp-sm);
+  }
+
+  /* 样式条：一个参数一格，标签永不折行；与工具无关的参数整格不出现 */
+  .an-stylebar { height: 56px; gap: 0; padding: 0 var(--sp-lg); }
+  .an-stylebar .an-group {
+    height: 100%; flex: none; align-items: center; gap: var(--sp-md);
+    padding: 0 var(--sp-xl);
+    border-right: 1px solid var(--border);
+  }
+  .an-stylebar .an-group:last-child { border-right: 0; }
+  .an-stylebar .an-group__label { white-space: nowrap; }
+  .an-stylebar .f-slider { width: 96px; }
+  .an-stylebar { padding: 0 var(--sp-md); }
+  .an-stylebar .an-group { padding: 0 var(--sp-lg); }
+  .an-stylebar .f-swatch { width: 20px; height: 20px; }
+  .an-group .f-data { white-space: nowrap; }
+  /* 填充按钮里的键帽翻成"墨色字 + 浅底"，不在琥珀底上再叠一块暗色 */
+  .f-btn--primary .f-kbd {
+    background: rgba(26, 18, 6, 0.12);
+    border-color: rgba(26, 18, 6, 0.28);
+    color: var(--accent-ink);
+  }
+</style>
+</head>
+<body data-theme="obsidian">
+
+<div class="f-window an-shell" style="width:1280px;height:800px;border-radius:0;border:0">
+
+  <!-- 标题栏：左手是身份，中间是键位（不占画布），右手是状态与窗口按钮 -->
+  <div class="f-titlebar">
+    <svg class="f-i" style="color:var(--accent)"><use href="#i-pencil"/></svg>
+    <span class="f-titlebar__title">标注 · 月度净收入.png</span>
+    <span class="f-titlebar__spacer"></span>
+    <span class="f-caption" style="font-size:var(--fs-caption)">R 矩形 · O 椭圆 · L 直线 · A 箭头 · D 铅笔 · M 马克笔 · T 文字 · G 马赛克 · B 模糊 · X 橡皮擦 · N 序号 · Y 高亮</span>
+    <span class="f-titlebar__spacer"></span>
+    <span class="f-chip" style="font-family:var(--font-data)">572 × 280 · 1:1</span>
+    <div class="f-titlebar__actions" style="margin-left:var(--sp-sm)">
+      <button class="f-winbtn"><svg class="f-i f-i--sm"><use href="#i-minus"/></svg></button>
+      <button class="f-winbtn"><svg class="f-i f-i--sm"><use href="#i-crop"/></svg></button>
+      <button class="f-winbtn f-winbtn--close"><svg class="f-i f-i--sm"><use href="#i-x"/></svg></button>
+    </div>
+  </div>
+
+  <div class="an-body">
+    <!-- 左侧工具轨：13 个工具，按"选择 / 形状 / 手绘 / 效果 / 标注"分五组 -->
+    <nav class="an-rail">
+      <button class="an-rail__item" aria-pressed="false"><svg class="f-i"><use href="#i-select"/></svg>选择<span class="an-rail__key">V</span></button>
+      <div class="an-rail__sep"></div>
+      <button class="an-rail__item" aria-pressed="true"><svg class="f-i"><use href="#i-rect"/></svg>矩形<span class="an-rail__key">R</span></button>
+      <button class="an-rail__item"><svg class="f-i"><use href="#i-ellipse"/></svg>椭圆<span class="an-rail__key">O</span></button>
+      <button class="an-rail__item"><svg class="f-i"><use href="#i-line"/></svg>直线<span class="an-rail__key">L</span></button>
+      <button class="an-rail__item"><svg class="f-i"><use href="#i-arrow"/></svg>箭头<span class="an-rail__key">A</span></button>
+      <div class="an-rail__sep"></div>
+      <button class="an-rail__item"><svg class="f-i"><use href="#i-pencil"/></svg>铅笔<span class="an-rail__key">D</span></button>
+      <button class="an-rail__item"><svg class="f-i"><use href="#i-marker"/></svg>马克笔<span class="an-rail__key">M</span></button>
+      <button class="an-rail__item"><svg class="f-i"><use href="#i-highlight"/></svg>高亮<span class="an-rail__key">Y</span></button>
+      <div class="an-rail__sep"></div>
+      <button class="an-rail__item"><svg class="f-i"><use href="#i-mosaic"/></svg>马赛克<span class="an-rail__key">G</span></button>
+      <button class="an-rail__item"><svg class="f-i"><use href="#i-blur"/></svg>模糊<span class="an-rail__key">B</span></button>
+      <button class="an-rail__item"><svg class="f-i"><use href="#i-eraser"/></svg>橡皮擦<span class="an-rail__key">X</span></button>
+      <div class="an-rail__sep"></div>
+      <button class="an-rail__item"><svg class="f-i"><use href="#i-text"/></svg>文字<span class="an-rail__key">T</span></button>
+      <button class="an-rail__item"><svg class="f-i"><use href="#i-badge"/></svg>序号<span class="an-rail__key">N</span></button>
+    </nav>
+
+    <!-- 画布：底图 + 图元，严格 1 物理像素 = 1 像素 -->
+    <div class="an-stage">
+      <svg class="an-shot" width="1024" height="420" viewBox="0 0 1024 420">
+        <defs>
+          <pattern id="mosaic" width="12" height="12" patternUnits="userSpaceOnUse">
+            <rect width="12" height="12" fill="#c3c9d1"/>
+            <rect width="5" height="5" fill="#dde1e6"/>
+            <rect x="5" y="5" width="7" height="4" fill="#aeb6c0"/>
+            <rect x="0" y="9" width="5" height="3" fill="#cfd4da"/>
+            <rect x="5" y="9" width="7" height="3" fill="#b8c0c9"/>
+          </pattern>
+        </defs>
+
+        <!-- ░░ 被标注的底图（内容，不属于设计系统） -->
+        <rect width="1024" height="420" rx="10" fill="#ffffff"/>
+        <text x="32" y="46" font-family="Segoe UI Variable Display, Segoe UI, sans-serif" font-size="17" font-weight="600" fill="#14161a">月度净收入</text>
+        <text x="32" y="70" font-family="Segoe UI Variable Text, Segoe UI, sans-serif" font-size="12" fill="#8a9098">单位：万元 · 近 9 个月</text>
+        <text x="992" y="40" text-anchor="end" font-family="Segoe UI Variable Text, Segoe UI, sans-serif" font-size="11" font-weight="600" letter-spacing=".4" fill="#8a9098">净收入</text>
+        <text x="992" y="70" text-anchor="end" font-family="Cascadia Code, Consolas, monospace" font-size="22" font-weight="600" fill="#14161a">¥2,914,880</text>
+        <line x1="32" y1="340" x2="992" y2="340" stroke="#e2e5e9" stroke-width="1"/>
+        <line x1="32" y1="100" x2="992" y2="100" stroke="#f0f2f4" stroke-width="1"/>
+        <line x1="32" y1="180" x2="992" y2="180" stroke="#f0f2f4" stroke-width="1"/>
+        <line x1="32" y1="260" x2="992" y2="260" stroke="#f0f2f4" stroke-width="1"/>
+
+        <g fill="#cfd5dd">
+          <rect x="64"  y="280" width="64" height="60"  rx="4"/>
+          <rect x="168" y="250" width="64" height="90"  rx="4"/>
+          <rect x="272" y="266" width="64" height="74"  rx="4"/>
+          <rect x="376" y="210" width="64" height="130" rx="4"/>
+          <rect x="480" y="188" width="64" height="152" rx="4"/>
+          <rect x="584" y="236" width="64" height="104" rx="4"/>
+          <rect x="688" y="154" width="64" height="186" rx="4"/>
+          <rect x="792" y="172" width="64" height="168" rx="4"/>
+        </g>
+        <rect x="896" y="132" width="64" height="208" rx="4" fill="#f5a524"/>
+        <g font-family="Segoe UI Variable Text, Segoe UI, sans-serif" font-size="12" fill="#8a9098" text-anchor="middle">
+          <text x="96"  y="364">7月</text><text x="200" y="364">8月</text><text x="304" y="364">9月</text>
+          <text x="408" y="364">10月</text><text x="512" y="364">11月</text><text x="616" y="364">12月</text>
+          <text x="720" y="364">1月</text><text x="824" y="364">2月</text><text x="928" y="364">3月</text>
+        </g>
+
+        <!-- ░░ 标注图元（Focal 的画布语法：琥珀＝形状，墨色＝文字，琥珀底＋墨色字＝强调文字） -->
+        <!-- 马赛克：把敏感数字打码 -->
+        <rect x="756" y="46" width="240" height="32" fill="url(#mosaic)"/>
+
+        <!-- 高亮：横贯一行的荧光带 -->
+        <rect x="32" y="318" width="960" height="24" fill="rgba(245,165,36,.20)"/>
+
+        <!-- 序号 + 强调文字：琥珀只做底，文字回到墨色 -->
+        <circle cx="120" cy="167" r="13" fill="#f5a524"/>
+        <text x="120" y="172" text-anchor="middle" font-family="Segoe UI Variable Display, Segoe UI, sans-serif" font-size="14" font-weight="600" fill="#1a1206">1</text>
+        <rect x="142" y="150" width="196" height="34" rx="4" fill="#f5a524"/>
+        <text x="156" y="173" font-family="Segoe UI Variable Display, Segoe UI, sans-serif" font-size="17" font-weight="600" fill="#1a1206">3 月冲到峰值</text>
+
+        <!-- 箭头：从强调文字指向峰值柱 -->
+        <path d="M346 167 H886" stroke="#f5a524" stroke-width="3" stroke-linecap="round" fill="none"/>
+        <path d="M888 167 l-16 -9 v18 z" fill="#f5a524"/>
+
+        <!-- 选中态图元：8 向手柄 + 1px 虚线外框（正在二次编辑） -->
+        <rect x="676" y="124" width="292" height="224" fill="none" stroke="#f5a524" stroke-width="2"/>
+        <g fill="#f5a524" stroke="rgba(0,0,0,.55)" stroke-width="1">
+          <rect x="672.5" y="120.5" width="7" height="7"/>
+          <rect x="818.5" y="120.5" width="7" height="7"/>
+          <rect x="964.5" y="120.5" width="7" height="7"/>
+          <rect x="672.5" y="232.5" width="7" height="7"/>
+          <rect x="964.5" y="232.5" width="7" height="7"/>
+          <rect x="672.5" y="344.5" width="7" height="7"/>
+          <rect x="818.5" y="344.5" width="7" height="7"/>
+          <rect x="964.5" y="344.5" width="7" height="7"/>
+        </g>
+      </svg>
+
+      <div class="an-zoombadge">
+        <span class="f-chip"><svg class="f-i f-i--sm"><use href="#i-ruler"/></svg>物理像素 1:1</span>
+        <span class="f-chip f-chip--accent">缩放 100%</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 样式条：只显示与"当前工具"有关的参数，无关项不出现 -->
+  <div class="an-stylebar">
+    <div class="an-group">
+      <span class="an-group__label">描边</span>
+      <div class="f-swatches">
+        <button class="f-swatch" style="background:#f5a524" aria-pressed="true" title="#F5A524"></button>
+        <button class="f-swatch" style="background:#e5484d" title="#E5484D"></button>
+        <button class="f-swatch" style="background:#2fb27c" title="#2FB27C"></button>
+        <button class="f-swatch" style="background:#57c7ff" title="#57C7FF"></button>
+        <button class="f-swatch" style="background:#14161a" title="#14161A"></button>
+        <button class="f-swatch" style="background:#ffffff" title="#FFFFFF"></button>
+        <button class="f-swatch f-swatch--custom" title="自定义颜色"></button>
+      </div>
+    </div>
+    <span class="f-divider-v"></span>
+    <div class="an-group">
+      <span class="an-group__label">填充</span>
+      <div class="f-seg">
+        <button class="f-seg__item" aria-pressed="true">无</button>
+        <button class="f-seg__item">半透明</button>
+        <button class="f-seg__item">实心</button>
+      </div>
+    </div>
+    <span class="f-divider-v"></span>
+    <div class="an-group">
+      <span class="an-group__label">线宽</span>
+      <input class="f-slider" type="range" min="1" max="20" value="3">
+      <span class="f-data" style="width:38px;text-align:right">3 px</span>
+    </div>
+    <div class="an-group">
+      <span class="an-group__label">不透明度</span>
+      <input class="f-slider" type="range" min="0" max="100" value="100">
+      <span class="f-data" style="width:38px;text-align:right">100%</span>
+    </div>
+    <span class="f-divider-v"></span>
+    <div class="an-group">
+      <span class="an-group__label">马赛克块</span>
+      <input class="f-slider" type="range" min="4" max="40" value="12">
+      <span class="f-data" style="width:38px;text-align:right">12 px</span>
+    </div>
+  </div>
+
+  <!-- 动作条：左手是"改坏了怎么办"，右手是"结束" -->
+  <div class="an-toolbar">
+    <button class="f-btn f-btn--quiet" title="撤销"><svg class="f-i"><use href="#i-undo"/></svg>撤销<span class="f-kbd">Ctrl Z</span></button>
+    <button class="f-btn f-btn--quiet" disabled title="重做"><svg class="f-i"><use href="#i-redo"/></svg>重做<span class="f-kbd">Ctrl Y</span></button>
+    <span class="f-divider-v"></span>
+    <button class="f-btn f-btn--quiet"><svg class="f-i"><use href="#i-trash"/></svg>清空</button>
+
+    <span class="f-grow"></span>
+
+    <div class="f-seg">
+      <button class="f-seg__item" aria-pressed="true">100%</button>
+      <button class="f-seg__item">适应窗口</button>
+    </div>
+    <span class="f-divider-v"></span>
+    <button class="f-btn"><svg class="f-i"><use href="#i-copy"/></svg>复制</button>
+    <button class="f-btn"><svg class="f-i"><use href="#i-pin"/></svg>贴图</button>
+    <button class="f-btn"><svg class="f-i"><use href="#i-x"/></svg>取消<span class="f-kbd">Esc</span></button>
+    <button class="f-btn f-btn--primary"><svg class="f-i"><use href="#i-check"/></svg>完成<span class="f-kbd">Enter</span></button>
+  </div>
+</div>
+
+<script src="../icons.js"></script>
+</body>
+</html>

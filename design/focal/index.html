@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>WhSnap · Focal 设计语言 v1.0</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="focal.css">
+<style>
+  /* 总览页＝"纸色阅读面"，与暗色操作面共用一套令牌 */
+  html { width: 1280px; background: var(--linen); }
+  body { width: 1280px; }
+  body { background: var(--linen); }
+  .hero-shot { width: 100%; display: block; border-radius: var(--r-card); border: 1px solid var(--hairline-light); box-shadow: var(--shadow-dialog); }
+  .hero-meta { display: flex; align-items: center; gap: var(--sp-md); margin-top: var(--sp-2xl); flex-wrap: wrap; }
+  .principles { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-xl); }
+  .principle { border-top: 2px solid var(--ink); padding-top: var(--sp-md); }
+  .principle__n { font-family: var(--font-data); font-size: var(--fs-caption); color: var(--ink-muted); }
+  .principle__n::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 1px; background: var(--accent); margin-right: 6px; vertical-align: 1px; }
+  .principle__t { font-size: 15px; font-weight: 600; margin: var(--sp-xs) 0 var(--sp-xs); }
+  .principle__d { font-size: 13px; line-height: 1.6; color: var(--ink-muted); margin: 0; }
+  .ruler { display: flex; align-items: flex-end; gap: var(--sp-md); height: 120px; }
+  .ruler__item { display: flex; flex-direction: column; align-items: center; gap: var(--sp-xs); }
+  .ruler__bar { width: 28px; background: var(--ink); border-radius: 2px 2px 0 0; }
+  .ruler__k { font-family: var(--font-data); font-size: 11px; color: var(--ink-muted); }
+  .radius-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-lg); }
+  .radius-box { height: 84px; background: var(--obsidian-800); border: 1px solid rgba(0,0,0,.25); display: grid; place-items: center; color: var(--on-dark-muted); font-family: var(--font-data); font-size: 12px; }
+  .elev { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-2xl); }
+  .elev__box { height: 92px; border-radius: var(--r-card); background: var(--obsidian-800); display: grid; place-items: center; color: var(--on-dark-muted); font-size: 12px; }
+  .iconwall { display: grid; grid-template-columns: repeat(8, 1fr); gap: var(--sp-sm); }
+  .iconcell { display: flex; flex-direction: column; align-items: center; gap: var(--sp-xs); padding: var(--sp-sm) 0; border-radius: var(--r-control); color: var(--on-dark-muted); }
+  .iconcell:hover { background: var(--obsidian-700); color: var(--text); }
+  .iconcell span { font-size: 10px; font-family: var(--font-data); }
+  .shots { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--sp-2xl); }
+  .shotcard { border: 1px solid var(--hairline-light); border-radius: var(--r-card); overflow: hidden; background: var(--paper); }
+  /* 固定取景框：卡片行高一致，界面截图按 contain 完整可见，不做裁切 */
+  .shotcard__frame { height: 352px; background: var(--obsidian-900); border-bottom: 1px solid var(--hairline-light); overflow: hidden; }
+  .shotcard__frame img { width: 100%; height: 352px; object-fit: contain; display: block; }
+  .shotcard__meta { padding: var(--sp-lg); }
+  .shotcard__t { font-size: 15px; font-weight: 600; }
+  .shotcard__d { font-size: 13px; color: var(--ink-muted); margin: var(--sp-2xs) 0 0; line-height: 1.6; }
+  .shotcard__link { font-size: 13px; color: var(--ink); text-decoration: none; border-bottom: 2px solid var(--accent); padding-bottom: 1px; }
+  .kv { display: grid; grid-template-columns: 160px 1fr; gap: var(--sp-sm) var(--sp-lg); font-size: 13px; }
+  .kv dt { color: var(--ink-muted); }
+  .kv dd { margin: 0; font-family: var(--font-data); }
+  .demo-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-md); }
+  .demo-col { display: flex; flex-direction: column; gap: var(--sp-md); }
+  .tel { width: 480px; flex: none; }
+</style>
+</head>
+<body class="spec-page" data-theme="paper">
+
+<div class="spec-wrap">
+
+  <!-- ════════════ 封面 ════════════ -->
+  <header>
+    <p class="f-micro" style="color:var(--accent-press)">WhSnap · 界面设计语言 · v1.0</p>
+    <h1 style="font-family:var(--font-display);font-size:56px;font-weight:600;line-height:1.05;letter-spacing:-1.4px;margin:var(--sp-md) 0 0">Focal</h1>
+    <p style="font-size:19px;line-height:1.6;color:var(--ink-muted);max-width:62ch;margin:var(--sp-lg) 0 0">
+      一套为<strong>像素级工具</strong>写的界面语言。暗色承载操作 —— 因为遮罩永远浮在别人的画面上；
+      纸色承载阅读 —— 因为设置与文档要能久看。全局只有一个交互色，且它绝不承担小字正文。
+    </p>
+    <div class="hero-meta">
+      <span class="f-chip" data-theme="obsidian">暗色优先 · Dark-first</span>
+      <span class="f-chip" data-theme="obsidian">单一强调色 · Signal Amber</span>
+      <span class="f-chip" data-theme="obsidian">零装饰渐变 · 三种层级</span>
+      <span class="f-chip" data-theme="obsidian">系统字体 · 零下载</span>
+    </div>
+    <div style="margin-top:var(--sp-3xl)">
+      <div class="shotcard__frame" style="height:auto;background:none;border:0;display:block"><img class="hero-shot" src="shots/overlay.png" alt="截图遮罩界面"></div>
+    </div>
+  </header>
+
+  <!-- ════════════ 01 原则 ════════════ -->
+  <section class="spec-sec">
+    <div class="spec-sec__head">
+      <span class="spec-sec__num">01</span>
+      <h2 class="f-title">六条不会破例的规则</h2>
+    </div>
+    <div class="principles">
+      <div class="principle">
+        <span class="principle__n">R1</span>
+        <p class="principle__t">一个颜色做全部交互</p>
+        <p class="principle__d">Signal Amber <span class="f-data">#F5A524</span> 是唯一的"点我"信号。它只做填充、描边、焦点环与量测标记 —— <span class="f-data">#F5A524</span> 在浅底上对比度不足，所以琥珀是一族：暗底用亮档，浅底要写小字时换 <span class="f-data">#8A5A0A</span>（5.4:1），或用墨字 + 琥珀下划线。</p>
+      </div>
+      <div class="principle">
+        <span class="principle__n">R2</span>
+        <p class="principle__t">暗色优先，纸色阅读</p>
+        <p class="principle__d">遮罩和工具条要压住任意桌面内容，所以是暗的；设置、文档、向导是长时间阅读的面，所以是纸色的。同一套令牌，两种音量。</p>
+      </div>
+      <div class="principle">
+        <span class="principle__n">R3</span>
+        <p class="principle__t">阴影只属于"浮在不可控内容之上"</p>
+        <p class="principle__d">浮动工具条、放大镜、托盘菜单、对话框可以用阴影；按钮、卡片、列表行、文字永远没有阴影。深度主要来自表面色阶 + 1px 发丝线。</p>
+      </div>
+      <div class="principle">
+        <span class="principle__n">R4</span>
+        <p class="principle__t">数字一律等宽</p>
+        <p class="principle__d">坐标、尺寸、色值、百分比、快捷键全部走 <span class="f-data">Cascadia Code</span> 并开启 tabular-nums —— 读数在跳动时不会左右抖。</p>
+      </div>
+      <div class="principle">
+        <span class="principle__n">R5</span>
+        <p class="principle__t">两级圆角语法</p>
+        <p class="principle__d">控件 6px、卡片 10px、面板与浮动条 14px。全圆只给<strong>状态与连续量</strong>（状态点、状态胶囊、开关轨道、滑杆握把）；一切<strong>动作</strong>（按钮、工具键、CTA）都是方的 —— 圆的是"读的"，方的是"点的"。CTA 绝不用胶囊。</p>
+      </div>
+      <div class="principle">
+        <span class="principle__n">R6</span>
+        <p class="principle__t">面积优先于描边</p>
+        <p class="principle__d">需要区分先换表面色阶（暗 ↔ 更暗 ↔ 纸），再考虑加线。一个界面里可见的 1px 线越少，越像仪器；越多，越像表单。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════ 02 颜色 ════════════ -->
+  <section class="spec-sec">
+    <div class="spec-sec__head">
+      <span class="spec-sec__num">02</span>
+      <h2 class="f-title">颜色</h2>
+      <span class="f-caption">Obsidian 表面族承载操作 · Paper 表面族承载阅读 · 唯一强调色是 Signal Amber</span>
+    </div>
+
+    <p class="f-micro" style="margin-bottom:var(--sp-md)">Obsidian · 暗色机壳</p>
+    <div class="spec-swatches" style="margin-bottom:var(--sp-2xl)">
+      <div class="spec-swatch"><div class="spec-swatch__chip" style="background:#08090a"></div><div class="spec-swatch__meta"><div class="spec-swatch__name">Void</div><div class="spec-swatch__hex">#08090A · 真空、播放器底</div></div></div>
+      <div class="spec-swatch"><div class="spec-swatch__chip" style="background:#101114"></div><div class="spec-swatch__meta"><div class="spec-swatch__name">Obsidian 900</div><div class="spec-swatch__hex">#101114 · 窗口底</div></div></div>
+      <div class="spec-swatch"><div class="spec-swatch__chip" style="background:#16181c"></div><div class="spec-swatch__meta"><div class="spec-swatch__name">Obsidian 800</div><div class="spec-swatch__hex">#16181C · 面板 / 工具条</div></div></div>
+      <div class="spec-swatch"><div class="spec-swatch__chip" style="background:#1e2126"></div><div class="spec-swatch__meta"><div class="spec-swatch__name">Obsidian 700</div><div class="spec-swatch__hex">#1E2126 · 抬升块 / 输入框</div></div></div>
+      <div class="spec-swatch"><div class="spec-swatch__chip" style="background:#2a2e35"></div><div class="spec-swatch__meta"><div class="spec-swatch__name">Obsidian 600</div><div class="spec-swatch__hex">#2A2E35 · hover / 轨道</div></div></div>
+      <div class="spec-swatch"><div class="spec-swatch__chip" style="background:#16181c;display:grid;place-items:center"><span style="display:block;width:72px;height:6px;background:rgba(255,255,255,.08)"></span></div><div class="spec-swatch__meta"><div class="spec-swatch__name">Hairline Dark</div><div class="spec-swatch__hex">白色 8% · 暗底发丝线</div></div></div>
+      <div class="spec-swatch"><div class="spec-swatch__chip" style="background:#16181c;display:grid;place-items:center"><span style="display:block;width:72px;height:6px;background:rgba(255,255,255,.14)"></span></div><div class="spec-swatch__meta"><div class="spec-swatch__name">Hairline Strong</div><div class="spec-swatch__hex">白色 14% · 浮层描边</div></div></div>
+      <div class="spec-swatch"><div class="spec-swatch__chip" style="background:linear-gradient(180deg,#1e2126 0 50%,#16181c 50% 100%)"></div><div class="spec-swatch__meta"><div class="spec-swatch__name">Inner Top Light</div><div class="spec-swatch__hex">白色 6% · 机加工倒角</div></div></div>
+    </div>
+
+    <p class="f-micro" style="margin-bottom:var(--sp-md)">Paper · 纸色阅读面</p>
+    <div class="spec-swatches" style="margin-bottom:var(--sp-2xl)">
+      <div class="spec-swatch"><div class="spec-swatch__chip" style="background:#ffffff"></div><div class="spec-swatch__meta"><div class="spec-swatch__name">Paper</div><div class="spec-swatch__hex">#FFFFFF · 卡片 / 阅读面</div></div></div>
+      <div class="spec-swatch"><div class="spec-swatch__chip" style="background:#f4f4f2"></div><div class="spec-swatch__meta"><div class="spec-swatch__name">Linen</div><div class="spec-swatch__hex">#F4F4F2 · 页面底（暖 2 阶）</div></div></div>
+      <div class="spec-swatch"><div class="spec-swatch__chip" style="background:#e9e9e5"></div><div class="spec-swatch__meta"><div class="spec-swatch__name">Linen Deep</div><div class="spec-swatch__hex">#E9E9E5 · 下沉块</div></div></div>
+      <div class="spec-swatch"><div class="spec-swatch__chip" style="background:#f4f4f2;display:grid;place-items:center"><span style="display:block;width:72px;height:6px;background:rgba(20,22,26,.10)"></span></div><div class="spec-swatch__meta"><div class="spec-swatch__name">Hairline Light</div><div class="spec-swatch__hex">墨色 10% · 浅底发丝线</div></div></div>
+    </div>
+
+    <p class="f-micro" style="margin-bottom:var(--sp-md)">Signal · 强调与语义</p>
+    <div class="spec-swatches">
+      <div class="spec-swatch"><div class="spec-swatch__chip" style="background:#f5a524"></div><div class="spec-swatch__meta"><div class="spec-swatch__name">Accent · 唯一交互色</div><div class="spec-swatch__hex">#F5A524 · 填充/描边/焦点环</div></div></div>
+      <div class="spec-swatch"><div class="spec-swatch__chip" style="background:#ffbb4a"></div><div class="spec-swatch__meta"><div class="spec-swatch__name">Accent Hover</div><div class="spec-swatch__hex">#FFBB4A</div></div></div>
+      <div class="spec-swatch"><div class="spec-swatch__chip" style="background:#d98e15"></div><div class="spec-swatch__meta"><div class="spec-swatch__name">Accent Press</div><div class="spec-swatch__hex">#D98E15</div></div></div>
+      <div class="spec-swatch"><div class="spec-swatch__chip" style="background:#1a1206"></div><div class="spec-swatch__meta"><div class="spec-swatch__name">Accent Ink</div><div class="spec-swatch__hex">#1A1206 · 琥珀底上的字</div></div></div>
+      <div class="spec-swatch"><div class="spec-swatch__chip" style="background:#2fb27c"></div><div class="spec-swatch__meta"><div class="spec-swatch__name">OK</div><div class="spec-swatch__hex">#2FB27C · 仅状态面</div></div></div>
+      <div class="spec-swatch"><div class="spec-swatch__chip" style="background:#e5484d"></div><div class="spec-swatch__meta"><div class="spec-swatch__name">Danger</div><div class="spec-swatch__hex">#E5484D · 仅状态面</div></div></div>
+      <div class="spec-swatch"><div class="spec-swatch__chip" style="background:#57c7ff"></div><div class="spec-swatch__meta"><div class="spec-swatch__name">Measure Element</div><div class="spec-swatch__hex">#57C7FF · 元素检测框</div></div></div>
+      <div class="spec-swatch"><div class="spec-swatch__chip" style="background:#ffd34d"></div><div class="spec-swatch__meta"><div class="spec-swatch__name">Measure Center</div><div class="spec-swatch__hex">#FFD34D · 放大镜中心像素</div></div></div>
+    </div>
+  </section>
+
+  <!-- ════════════ 03 排版 ════════════ -->
+  <section class="spec-sec">
+    <div class="spec-sec__head">
+      <span class="spec-sec__num">03</span>
+      <h2 class="f-title">排版</h2>
+      <span class="f-caption">Segoe UI Variable（显示 / 正文）+ Cascadia Code（数据），两者都是系统字体</span>
+    </div>
+
+    <div class="spec-type-row">
+      <div class="spec-type-row__meta">display · 28 / 600<br>-0.4px</div>
+      <div style="font-family:var(--font-display);font-size:28px;font-weight:600;letter-spacing:-0.4px;line-height:1.15">一次截图，三种出口</div>
+    </div>
+    <div class="spec-type-row">
+      <div class="spec-type-row__meta">title · 20 / 600<br>-0.3px</div>
+      <div style="font-family:var(--font-display);font-size:20px;font-weight:600;letter-spacing:-0.3px;line-height:1.25">贴图管理</div>
+    </div>
+    <div class="spec-type-row">
+      <div class="spec-type-row__meta">subtitle · 15 / 600<br>-0.2px</div>
+      <div style="font-size:15px;font-weight:600;letter-spacing:-0.2px">截图 · 7 项 · 采集后端与元素检测</div>
+    </div>
+    <div class="spec-type-row">
+      <div class="spec-type-row__meta">body · 14 / 400<br>0</div>
+      <div style="font-size:14px;line-height:1.5;max-width:70ch">拖动框选区域，方向键逐像素微调，按下 Enter 就按设置里的动作执行 —— 复制、保存、贴图三件事各有一个直达键，不必进菜单。</div>
+    </div>
+    <div class="spec-type-row">
+      <div class="spec-type-row__meta">caption · 12 / 400<br>0</div>
+      <div style="font-size:12px;line-height:1.45;color:var(--ink-muted)">关闭后只用窗口矩形回退：更快，但只能识别到整窗级别。</div>
+    </div>
+    <div class="spec-type-row">
+      <div class="spec-type-row__meta">micro · 11 / 600<br>+0.4px 大写</div>
+      <div class="f-micro" style="color:var(--ink)">Capture Backend · 标签永远正字距</div>
+    </div>
+    <div class="spec-type-row">
+      <div class="spec-type-row__meta">data · 13 / 500<br>Cascadia Code</div>
+      <div class="f-data" style="color:var(--ink)">572 × 280 · 372, 330 · #F5A524 · 100%</div>
+    </div>
+    <div class="spec-type-row">
+      <div class="spec-type-row__meta">data-lg · 20 / 600<br>-0.4px 等宽</div>
+      <div style="font-family:var(--font-data);font-size:20px;font-weight:600;letter-spacing:-0.4px">1280 × 720</div>
+    </div>
+    <p class="f-caption" style="margin-top:var(--sp-lg);max-width:78ch">
+      显示字号用负字距（"-0.2 → -0.4px"）压紧标题；而小号大写标签反过来用正字距（"+0.4px"）拉开呼吸 —— 两条规则方向相反，但都是为了让"读"和"看"分开。
+      界面基准 14px，不是 16px：这是桌面工具的密度，不是网页的密度。
+    </p>
+  </section>
+
+  <!-- ════════════ 04 间距 / 圆角 / 层级 ════════════ -->
+  <section class="spec-sec">
+    <div class="spec-sec__head">
+      <span class="spec-sec__num">04</span>
+      <h2 class="f-title">间距 · 圆角 · 层级</h2>
+    </div>
+
+    <div class="ruler" style="margin-bottom:var(--sp-3xl)">
+      <div class="ruler__item"><div class="ruler__bar" style="height:2px"></div><span class="ruler__k">2</span></div>
+      <div class="ruler__item"><div class="ruler__bar" style="height:4px"></div><span class="ruler__k">4</span></div>
+      <div class="ruler__item"><div class="ruler__bar" style="height:6px"></div><span class="ruler__k">6</span></div>
+      <div class="ruler__item"><div class="ruler__bar" style="height:8px"></div><span class="ruler__k">8</span></div>
+      <div class="ruler__item"><div class="ruler__bar" style="height:12px"></div><span class="ruler__k">12</span></div>
+      <div class="ruler__item"><div class="ruler__bar" style="height:16px"></div><span class="ruler__k">16</span></div>
+      <div class="ruler__item"><div class="ruler__bar" style="height:20px"></div><span class="ruler__k">20</span></div>
+      <div class="ruler__item"><div class="ruler__bar" style="height:24px"></div><span class="ruler__k">24</span></div>
+      <div class="ruler__item"><div class="ruler__bar" style="height:32px"></div><span class="ruler__k">32</span></div>
+      <div class="ruler__item"><div class="ruler__bar" style="height:40px"></div><span class="ruler__k">40</span></div>
+      <div class="ruler__item"><div class="ruler__bar" style="height:56px"></div><span class="ruler__k">56</span></div>
+      <div class="ruler__item"><div class="ruler__bar" style="height:72px"></div><span class="ruler__k">72</span></div>
+      <div style="margin-left:var(--sp-xl);align-self:center" class="f-caption">4px 基数。控件高 30、行高 32、工具条 40、浮动条 44、窗口按钮 26×22。</div>
+    </div>
+
+    <div class="radius-grid" style="margin-bottom:var(--sp-3xl)">
+      <div class="radius-box" style="border-radius:2px">2 · hair</div>
+      <div class="radius-box" style="border-radius:6px">6 · control</div>
+      <div class="radius-box" style="border-radius:10px">10 · card</div>
+      <div class="radius-box" style="border-radius:14px">14 · panel</div>
+    </div>
+
+    <div class="elev" data-theme="obsidian" style="background:var(--obsidian-900);padding:var(--sp-2xl);border-radius:var(--r-card)">
+      <div class="elev__box" style="box-shadow:none;border:1px solid var(--hairline-dark)">L0 平铺 + 发丝线<br><span style="font-size:11px">卡片 / 列表行 / 按钮</span></div>
+      <div class="elev__box" style="box-shadow:var(--shadow-chrome);border:1px solid var(--hairline-dark-strong)">L1 机壳<br><span style="font-size:11px">浮在不可控内容之上</span></div>
+      <div class="elev__box" style="box-shadow:var(--shadow-dialog);background:var(--paper);color:var(--ink)">L2 对话框<br><span style="font-size:11px">纸色面上的模态</span></div>
+    </div>
+  </section>
+
+  <!-- ════════════ 05 组件 ════════════ -->
+  <section class="spec-sec">
+    <div class="spec-sec__head">
+      <span class="spec-sec__num">05</span>
+      <h2 class="f-title">组件</h2>
+      <span class="f-caption">同一套组件在两种表面上自动换肤</span>
+    </div>
+
+    <div class="spec-grid spec-grid--2">
+      <div>
+        <span class="spec-label">按钮：一个填充，其余都是暗块</span>
+        <div class="spec-demo" data-theme="obsidian">
+          <div class="demo-row">
+            <button class="f-btn f-btn--primary"><svg class="f-i"><use href="#i-check"/></svg>完成</button>
+            <button class="f-btn"><svg class="f-i"><use href="#i-pin"/></svg>贴图</button>
+            <button class="f-btn f-btn--quiet">取消</button>
+            <button class="f-btn f-btn--danger">恢复默认</button>
+            <button class="f-btn" disabled>不可用</button>
+            <button class="f-btn f-btn--icon"><svg class="f-i"><use href="#i-gear"/></svg></button>
+          </div>
+          <hr class="f-divider-h">
+          <div class="demo-row">
+            <button class="f-btn f-btn--primary"><svg class="f-i"><use href="#i-check"/></svg>完成<span class="f-kbd">Enter</span></button>
+            <span class="f-caption" style="color:var(--on-dark-muted)">主按钮里的键帽翻成墨色字 + 浅底</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <span class="spec-label">工具键与分段控制：互斥用琥珀底</span>
+        <div class="spec-demo" data-theme="obsidian">
+          <div class="f-tools">
+            <button class="f-tool f-tool--wide" aria-pressed="true"><svg class="f-i"><use href="#i-crop"/></svg><span>区域</span></button>
+            <button class="f-tool f-tool--wide"><svg class="f-i"><use href="#i-pointer"/></svg><span>元素</span></button>
+            <button class="f-tool f-tool--wide"><svg class="f-i"><use href="#i-eyedropper"/></svg><span>取色</span></button>
+            <span class="f-divider-v"></span>
+            <button class="f-tool"><svg class="f-i"><use href="#i-pencil"/></svg></button>
+            <button class="f-tool"><svg class="f-i"><use href="#i-mosaic"/></svg></button>
+          </div>
+          <hr class="f-divider-h">
+          <div class="demo-row">
+            <div class="f-seg">
+              <button class="f-seg__item" aria-pressed="true">无</button>
+              <button class="f-seg__item">半透明</button>
+              <button class="f-seg__item">实心</button>
+            </div>
+            <span class="f-keys"><span class="f-kbd">Ctrl</span><span class="f-kbd">Shift</span><span class="f-kbd">,</span></span>
+            <span class="f-keys"><span class="f-kbd">F1</span><span class="f-kbd">F3</span><span class="f-kbd">Esc</span></span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <span class="spec-label">输入：开关是凹槽 ＋ 琥珀滑块</span>
+        <div class="spec-demo" data-theme="obsidian">
+          <div class="demo-col">
+            <div class="demo-row"><button class="f-switch" role="switch" aria-checked="true"></button><button class="f-switch" role="switch" aria-checked="false"></button><span class="f-caption" style="color:var(--on-dark-muted)">开 / 关</span></div>
+            <div class="demo-row"><input class="f-check" type="checkbox" checked><input class="f-check" type="checkbox"><span class="f-caption" style="color:var(--on-dark-muted)">勾是 SVG 裁切，不是字体符号</span></div>
+            <div class="demo-row tel"><input class="f-slider" type="range" value="45"><span class="f-data">45%</span></div>
+            <div class="demo-row"><select class="f-select" style="width:200px"><option>自动（推荐）</option></select><input class="f-input" placeholder="保存目录…" style="width:180px"></div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <span class="spec-label">状态：语义色只出现在这里</span>
+        <div class="spec-demo" data-theme="obsidian" style="display:flex;flex-direction:column;gap:var(--sp-md)">
+          <div class="f-banner f-banner--warn"><svg class="f-i"><use href="#i-warning"/></svg><div class="f-banner__main"><span class="f-banner__title">「取色并复制」与其它动作冲突</span>已按设置保存但停用。</div></div>
+          <div class="f-banner f-banner--ok"><svg class="f-i"><use href="#i-check-circle"/></svg><div class="f-banner__main">截图已复制到剪贴板（DIB + PNG）。</div></div>
+          <div class="f-banner f-banner--danger"><svg class="f-i"><use href="#i-warning"/></svg><div class="f-banner__main">采集失败：WGC 与 DXGI 均返回空帧，已回退 GDI。</div></div>
+          <div class="f-statusbar" style="border-radius:var(--r-control);border:1px solid var(--border)"><span class="f-dot"></span><span>配置已保存 · 28 项 · schema v3</span><span class="f-grow"></span><span class="f-data" style="font-size:11px">v1.0.0-preview.2</span></div>
+        </div>
+      </div>
+
+      <div>
+        <span class="spec-label">菜单与列表：托盘、贴图管理共用一套行结构</span>
+        <div class="spec-demo" data-theme="obsidian">
+          <div class="f-menu" style="box-shadow:none">
+            <div class="f-menuitem"><svg class="f-i"><use href="#i-crop"/></svg><span class="f-menuitem__label">截图</span><span class="f-menu__keys">F1</span></div>
+            <div class="f-menuitem"><svg class="f-i"><use href="#i-pin"/></svg><span class="f-menuitem__label">贴图剪贴板内容</span><span class="f-menu__keys">F3</span></div>
+            <div class="f-menusep"></div>
+            <div class="f-menuitem"><span class="f-menu__check"><svg class="f-i f-i--sm"><use href="#i-check"/></svg></span><span class="f-menuitem__label">开机自启</span></div>
+            <div class="f-menuitem f-menuitem--danger"><svg class="f-i"><use href="#i-power"/></svg><span class="f-menuitem__label">退出</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <span class="spec-label">图标：自绘 24 网格 / 1.6 描边 / 只用 currentColor</span>
+        <div class="spec-demo" data-theme="obsidian">
+          <div class="iconwall">
+            <div class="iconcell"><svg class="f-i f-i--lg"><use href="#i-crop"/></svg><span>crop</span></div>
+            <div class="iconcell"><svg class="f-i f-i--lg"><use href="#i-pointer"/></svg><span>pointer</span></div>
+            <div class="iconcell"><svg class="f-i f-i--lg"><use href="#i-eyedropper"/></svg><span>dropper</span></div>
+            <div class="iconcell"><svg class="f-i f-i--lg"><use href="#i-magnifier"/></svg><span>loupe</span></div>
+            <div class="iconcell"><svg class="f-i f-i--lg"><use href="#i-pin"/></svg><span>pin</span></div>
+            <div class="iconcell"><svg class="f-i f-i--lg"><use href="#i-layers"/></svg><span>layers</span></div>
+            <div class="iconcell"><svg class="f-i f-i--lg"><use href="#i-pencil"/></svg><span>pencil</span></div>
+            <div class="iconcell"><svg class="f-i f-i--lg"><use href="#i-mosaic"/></svg><span>mosaic</span></div>
+            <div class="iconcell"><svg class="f-i f-i--lg"><use href="#i-blur"/></svg><span>blur</span></div>
+            <div class="iconcell"><svg class="f-i f-i--lg"><use href="#i-eraser"/></svg><span>eraser</span></div>
+            <div class="iconcell"><svg class="f-i f-i--lg"><use href="#i-badge"/></svg><span>badge</span></div>
+            <div class="iconcell"><svg class="f-i f-i--lg"><use href="#i-highlight"/></svg><span>highlight</span></div>
+            <div class="iconcell"><svg class="f-i f-i--lg"><use href="#i-rotate"/></svg><span>rotate</span></div>
+            <div class="iconcell"><svg class="f-i f-i--lg"><use href="#i-flipH"/></svg><span>flip-h</span></div>
+            <div class="iconcell"><svg class="f-i f-i--lg"><use href="#i-flipV"/></svg><span>flip-v</span></div>
+            <div class="iconcell"><svg class="f-i f-i--lg"><use href="#i-droplet"/></svg><span>droplet</span></div>
+            <div class="iconcell"><svg class="f-i f-i--lg"><use href="#i-keyboard"/></svg><span>keys</span></div>
+            <div class="iconcell"><svg class="f-i f-i--lg"><use href="#i-clipboard"/></svg><span>clipboard</span></div>
+            <div class="iconcell"><svg class="f-i f-i--lg"><use href="#i-refresh"/></svg><span>refresh</span></div>
+            <div class="iconcell"><svg class="f-i f-i--lg"><use href="#i-trash"/></svg><span>trash</span></div>
+            <div class="iconcell"><svg class="f-i f-i--lg"><use href="#i-undo"/></svg><span>undo</span></div>
+            <div class="iconcell"><svg class="f-i f-i--lg"><use href="#i-redo"/></svg><span>redo</span></div>
+            <div class="iconcell"><svg class="f-i f-i--lg"><use href="#i-warning"/></svg><span>warning</span></div>
+            <div class="iconcell"><svg class="f-i f-i--lg"><use href="#i-info"/></svg><span>info</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:var(--sp-xl)">
+      <span class="spec-label">同一组按钮，换到纸色面自动换肤（组件不变，令牌变）</span>
+      <div class="spec-demo spec-demo--paper" data-theme="paper">
+        <div class="demo-row">
+          <button class="f-btn f-btn--primary"><svg class="f-i"><use href="#i-check"/></svg>开始使用</button>
+          <button class="f-btn">打开用户手册</button>
+          <button class="f-btn f-btn--quiet">稍后再看</button>
+          <button class="f-switch" role="switch" aria-checked="true"></button>
+          <span class="f-keys"><span class="f-kbd">Ctrl</span><span class="f-kbd">Shift</span><span class="f-kbd">,</span></span>
+          <span class="f-chip f-chip--accent">缩放 100%</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════ 06 界面 ════════════ -->
+  <section class="spec-sec">
+    <div class="spec-sec__head">
+      <span class="spec-sec__num">06</span>
+      <h2 class="f-title">六个界面</h2>
+      <span class="f-caption">全部由 tokens.css + focal.css 渲染，可点开交互版</span>
+    </div>
+    <div class="shots">
+      <a class="shotcard" href="surfaces/overlay.html">
+        <div class="shotcard__frame"><img src="shots/overlay.png" alt="截图遮罩"></div>
+        <div class="shotcard__meta">
+          <div class="shotcard__t">截图遮罩 · 1440 × 900</div>
+          <p class="shotcard__d">暗幕挖出选区，琥珀边框 + 8 向手柄 + 尺寸标签；放大镜带物理像素网格与色值读数；浮动工具条把「区域 / 元素 / 取色 / 标注」和三个出口放在同一行。</p>
+          <p class="shotcard__d"><span class="shotcard__link">打开交互版 →</span></p>
+        </div>
+      </a>
+      <a class="shotcard" href="surfaces/annotate.html">
+        <div class="shotcard__frame"><img src="shots/annotate.png" alt="标注编辑器"></div>
+        <div class="shotcard__meta">
+          <div class="shotcard__t">标注编辑器 · 1280 × 800</div>
+          <p class="shotcard__d">13 个工具沿左侧竖排分组，样式条只显示与当前工具有关的参数。画布上演示了"琥珀只做底、文字回到墨色"的强调写法，以及选中图元的 8 向手柄。</p>
+          <p class="shotcard__d"><span class="shotcard__link">打开交互版 →</span></p>
+        </div>
+      </a>
+      <a class="shotcard" href="surfaces/settings.html">
+        <div class="shotcard__frame"><img src="shots/settings.png" alt="设置窗口"></div>
+        <div class="shotcard__meta">
+          <div class="shotcard__t">设置 · 980 × 680</div>
+          <p class="shotcard__d">11 个分组一次摊开在左栏（设置不该需要猜在哪一页）；每行是「标题 + 一句人话 + 控件」，遮罩暗度直接画出"45% 到底多黑"。</p>
+          <p class="shotcard__d"><span class="shotcard__link">打开交互版 →</span></p>
+        </div>
+      </a>
+      <a class="shotcard" href="surfaces/pin-panel.html">
+        <div class="shotcard__frame"><img src="shots/pin-panel.png" alt="贴图管理面板"></div>
+        <div class="shotcard__meta">
+          <div class="shotcard__t">贴图管理 · 760 × 560</div>
+          <p class="shotcard__d">每张贴图一行：缩略图、尺寸、缩放、层级、显示状态；悬停才出现单张操作，底部是批量动作 —— 常用操作不用进右键菜单。</p>
+          <p class="shotcard__d"><span class="shotcard__link">打开交互版 →</span></p>
+        </div>
+      </a>
+      <a class="shotcard" href="surfaces/tray.html">
+        <div class="shotcard__frame"><img src="shots/tray.png" alt="托盘菜单"></div>
+        <div class="shotcard__meta">
+          <div class="shotcard__t">托盘菜单 · 700 × 760</div>
+          <p class="shotcard__d">分组之间用发丝线，快捷键右对齐成第二列；"最近颜色"是色块网格而不是一列文字 —— 颜色用眼睛找，不用读。</p>
+          <p class="shotcard__d"><span class="shotcard__link">打开交互版 →</span></p>
+        </div>
+      </a>
+      <a class="shotcard" href="surfaces/onboarding.html">
+        <div class="shotcard__frame"><img src="shots/onboarding.png" alt="首次运行向导"></div>
+        <div class="shotcard__meta">
+          <div class="shotcard__t">首次运行 · 880 × 620</div>
+          <p class="shotcard__d">第一次打开只教三件事：怎么截图、怎么贴图、怎么改键位。录键直接在主界面完成，不需要先找到设置。</p>
+          <p class="shotcard__d"><span class="shotcard__link">打开交互版 →</span></p>
+        </div>
+      </a>
+    </div>
+  </section>
+
+  <!-- ════════════ 07 交接 ════════════ -->
+  <section class="spec-sec">
+    <div class="spec-sec__head">
+      <span class="spec-sec__num">07</span>
+      <h2 class="f-title">交接</h2>
+    </div>
+    <div class="spec-grid spec-grid--2">
+      <dl class="kv">
+        <dt>tokens.css</dt><dd>全部色值 / 字号 / 间距 / 圆角 / 层级变量</dd>
+        <dt>focal.css</dt><dd>组件层（f- 通用 / ov- 遮罩 / an- 标注 / ob- 向导）</dd>
+        <dt>icons.js</dt><dd>自绘图标集，24 网格、1.6 描边</dd>
+        <dt>theme/Theme.xaml</dt><dd>WPF 资源字典：同名字符串键 + 控件样式</dd>
+        <dt>shot.ps1</dt><dd>无头 Chrome 渲染全部界面为 PNG</dd>
+      </dl>
+      <div>
+        <p class="f-caption" style="font-size:14px;line-height:1.7;color:var(--ink)">
+          <strong>给 WPF 的移植规则：</strong><span class="f-data">Theme.xaml</span> 里的键名与 CSS 变量一一对应（连字符换驼峰）。
+          迁移时只改 <span class="f-data">Theme.xaml</span>，不动任何界面代码 —— 这套语言的成本控制就靠这一条：
+          <strong>界面里不允许出现字面量色值</strong>。
+        </p>
+        <p class="f-caption" style="font-size:14px;line-height:1.7;color:var(--ink);margin-top:var(--sp-md)">
+          <strong>字体：</strong>Segoe UI Variable 与 Cascadia Code 都是 Windows 11 自带；在 Win10 上自动落到 Segoe UI / Consolas，字重阶梯不塌。
+        </p>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script src="icons.js"></script>
+</body>
+</html>

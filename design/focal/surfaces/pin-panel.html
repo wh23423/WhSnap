@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Focal · 贴图管理</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../focal.css">
+<style>
+  /* 页面级：只写定位 / 网格 / 缩略图内容，颜色 · 圆角 · 阴影全部来自令牌 */
+  html, body { width: 760px; height: 560px; overflow: hidden; background: var(--void); }
+  body { padding: 0; }
+
+  .pp-window { width: 760px; height: 560px; }
+
+  .pp-body {
+    flex: 1; min-height: 0;
+    display: flex; flex-direction: column;
+    padding: var(--sp-lg) var(--sp-lg) 0;
+  }
+
+  /* 摘要行：一行字 + 右侧刷新，不要卡片、不要分隔线 */
+  .pp-summary { display: flex; align-items: center; gap: var(--sp-md); height: var(--h-control); flex: none; }
+  .pp-summary__text { font-size: var(--fs-body); color: var(--text-muted); }
+  .pp-summary__text b { color: var(--text); font-weight: 600; }
+  /* 分隔点两侧留白必须对称，否则三个数字会黏在一起 */
+  .pp-summary__sep { color: var(--text-faint); margin: 0 var(--sp-xs); }
+
+  /* 三个右对齐列共用同一组基准宽度：列头与行内容必须落在同一竖线上。
+     728px 行宽里，缩略图 44 + 间距 48 + 状态 52 + 操作 156 是固定开销，
+     余下的才留给文件名与尺寸说明 —— 所以操作列不能靠内容撑开，必须定宽。 */
+  .pp-col-main { flex: 1; min-width: 0; }
+  .pp-col-state { width: 52px; flex: none; }
+  .pp-col-actions { width: 156px; flex: none; }
+
+  .pp-cols {
+    display: flex; align-items: center; gap: var(--sp-md);
+    height: 22px; padding: 0 var(--sp-lg); flex: none;
+  }
+  .pp-cols__gutter { width: 44px; flex: none; }
+
+  .pp-list { display: flex; flex-direction: column; gap: var(--sp-xs); padding-top: var(--sp-xs); }
+  /* 行高 72：三行占满表格区上部，余下一点空白留给"列表还会增长"的余地 */
+  .pp-list .f-item { min-height: 72px; padding: var(--sp-md) var(--sp-lg); }
+
+  /* 缩略图内容：纯 CSS 画的图，不用外部图片 */
+  .pp-thumb { width: 44px; height: 34px; }
+  .pp-thumb--shot {
+    display: block; padding: 0;
+    position: relative;
+    background:
+      linear-gradient(to bottom, #e7eaee 0 5px, transparent 5px),
+      linear-gradient(to right, #eff1f4 0 11px, transparent 11px),
+      linear-gradient(to bottom, #fbfcfd 0 100%);
+  }
+  .pp-thumb--shot::after {
+    content: ""; position: absolute; left: 15px; top: 12px; width: 22px; height: 2px;
+    background: #c6ccd4; box-shadow: 0 6px 0 #dde1e6;
+  }
+  .pp-thumb--board { display: grid; place-items: center; }
+  .pp-thumb--board i {
+    display: block; width: 30px; height: 20px;
+    background:
+      linear-gradient(to right, #57c7ff 0 34%, transparent 34%),
+      linear-gradient(to top, #2fb27c 0 44%, #cfd5dd 44%);
+  }
+  .pp-thumb--color { background: var(--accent); border-color: var(--accent); }
+
+  /* 状态字：只在"显示中"用等宽 + 墨色，隐藏态退到 faint */
+  .pp-state { font-size: var(--fs-caption); color: var(--text-muted); }
+  .pp-state--off { color: var(--text-faint); }
+  /* 选中行里状态字直接压在琥珀底上，需要一点分隔而不是靠感觉 */
+  .pp-row__div { width: 1px; height: 18px; flex: none; background: var(--border-soft); }
+  /* 操作按钮只留文字：行宽是硬约束，图标会把第三颗按钮挤出窗口 */
+  .pp-list .f-item__actions { justify-content: flex-start; }
+  .pp-act { min-width: 0; padding: 0 var(--sp-xs); }
+
+  /* 行尾状态点 + 批量操作条 */
+  .pp-batch {
+    margin-top: auto;
+    display: flex; align-items: center; gap: var(--sp-sm);
+    padding: var(--sp-md) 0 var(--sp-lg);
+    border-top: 1px solid var(--border-soft);
+  }
+  .pp-batch__spacer { flex: 1; }
+  .pp-batch__label { margin-right: var(--sp-2xs); }
+</style>
+</head>
+<body data-theme="obsidian">
+
+<div class="f-window pp-window">
+
+  <div class="f-titlebar">
+    <svg class="f-i f-i--sm" style="color:var(--accent)"><use href="#i-layers"/></svg>
+    <span class="f-titlebar__title">贴图管理</span>
+    <span class="f-titlebar__spacer"></span>
+    <div class="f-titlebar__actions">
+      <button class="f-winbtn" title="最小化"><svg class="f-i f-i--sm"><use href="#i-minus"/></svg></button>
+      <button class="f-winbtn" title="最大化"><svg class="f-i f-i--sm"><use href="#i-window"/></svg></button>
+      <button class="f-winbtn f-winbtn--close" title="关闭"><svg class="f-i f-i--sm"><use href="#i-x"/></svg></button>
+    </div>
+  </div>
+
+  <div class="pp-body">
+
+    <div class="pp-summary">
+      <span class="pp-summary__text"><b>3 张</b>贴图<span class="pp-summary__sep">·</span><b>2 张</b>显示中<span class="pp-summary__sep">·</span>内存 <b>18.4 MB</b></span>
+      <span class="f-grow"></span>
+      <button class="f-btn f-btn--sm">
+        <svg class="f-i f-i--sm"><use href="#i-refresh"/></svg>刷新
+      </button>
+    </div>
+
+    <div class="pp-cols">
+      <span class="pp-cols__gutter"></span>
+      <span class="f-micro pp-col-main">贴图</span>
+      <span class="f-micro pp-col-state">状态</span>
+      <span class="f-micro pp-col-actions">操作</span>
+    </div>
+
+    <div class="f-list pp-list">
+
+      <div class="f-item" aria-selected="true">
+        <div class="f-item__thumb pp-thumb pp-thumb--shot"></div>
+        <div class="f-item__main pp-col-main">
+          <span class="f-item__title">截图 2026-03-28 09-14-22.png</span>
+          <span class="f-item__meta">1280 × 720 · 100% · 置顶 · 显示中</span>
+        </div>
+        <span class="pp-state pp-col-state">显示中</span>
+        <span class="pp-row__div"></span>
+        <div class="f-item__actions pp-col-actions">
+          <button class="f-btn f-btn--sm pp-act">取消置顶</button>
+          <button class="f-btn f-btn--sm pp-act">隐藏</button>
+          <button class="f-btn f-btn--sm pp-act">关闭</button>
+        </div>
+      </div>
+
+      <div class="f-item">
+        <div class="f-item__thumb pp-thumb pp-thumb--board"><i></i></div>
+        <div class="f-item__main pp-col-main">
+          <span class="f-item__title">简报截图.png</span>
+          <span class="f-item__meta">860 × 620 · 80% · 未置顶 · 显示中</span>
+        </div>
+        <span class="pp-state pp-col-state">显示中</span>
+        <span class="pp-row__div" style="background:transparent"></span>
+        <div class="f-item__actions pp-col-actions">
+          <button class="f-btn f-btn--sm pp-act">置顶</button>
+          <button class="f-btn f-btn--sm pp-act">隐藏</button>
+          <button class="f-btn f-btn--sm pp-act">关闭</button>
+        </div>
+      </div>
+
+      <div class="f-item">
+        <div class="f-item__thumb pp-thumb pp-thumb--color"></div>
+        <div class="f-item__main pp-col-main">
+          <span class="f-item__title">颜色 #F5A524</span>
+          <span class="f-item__meta">240 × 120 · 100% · 未置顶 · 已隐藏</span>
+        </div>
+        <span class="pp-state pp-state--off pp-col-state">已隐藏</span>
+        <span class="pp-row__div" style="background:transparent"></span>
+        <div class="f-item__actions pp-col-actions">
+          <button class="f-btn f-btn--sm pp-act">置顶</button>
+          <button class="f-btn f-btn--sm pp-act">显示</button>
+          <button class="f-btn f-btn--sm pp-act">关闭</button>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="pp-batch">
+      <span class="f-micro pp-batch__label">批量</span>
+      <button class="f-btn f-btn--sm">显示全部</button>
+      <button class="f-btn f-btn--sm">隐藏全部</button>
+      <button class="f-btn f-btn--sm">全部置顶</button>
+      <button class="f-btn f-btn--sm f-btn--danger"><svg class="f-i f-i--sm"><use href="#i-trash"/></svg>关闭全部</button>
+      <span class="pp-batch__spacer"></span>
+      <button class="f-btn f-btn--primary">关闭窗口</button>
+    </div>
+
+  </div>
+
+  <div class="f-statusbar">
+    <span class="f-dot"></span>
+    <span>已选中 <span class="f-data">1</span> 张贴图</span>
+    <span class="f-faint">·</span>
+    <span>共 <span class="f-data">3</span> 张</span>
+    <span class="f-faint">·</span>
+    <span>内存 <span class="f-data">18.4 MB</span></span>
+    <span class="f-grow"></span>
+    <span>贴图缩放到 <span class="f-data">100%</span> 显示</span>
+  </div>
+
+</div>
+
+<script src="../icons.js"></script>
+</body>
+</html>

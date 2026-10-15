@@ -1,15 +1,20 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Data;
 using System.Windows.Input;
-using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Shapes;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using WhSnap.Core;
 using WhSnap.Services;
+using WhSnap.Theme;
 
 namespace WhSnap.Settings;
 
@@ -17,20 +22,35 @@ namespace WhSnap.Settings;
 /// 设置窗口。界面**由 <see cref="SettingsSchema"/> 自动生成**（规划 §6 的实现要点），
 /// 因此加一个配置项只需要改 schema，不会出现"功能加了但设置界面漏了"。
 ///
+/// 结构照 design/focal/surfaces/settings.html 落地：
+///   标题栏 32（obsidian-900 窗口底 + 琥珀图标 + 标题 + 窗口按钮，WindowStyle=None 时拖标题栏移动窗口）
+///   → 左导航 188（11 个分组一次摊开，点一下跳到对应分组）
+///   → 右侧可滚动内容区（状态横幅 + 9 个配置分组 + 快捷键 + 维护）
+///   → 内容区底部状态条 28（结论 + 配置文件路径，数字/路径走等宽）
+///   → 底部操作条 56（检测热键占用 / 导入 / 导出 / 恢复默认 / 完成）
+///
 /// 三条行为约定（对应 §6 四条原则）：
-///   * 能配的都在这：schema 覆盖全部配置项，另有独立的热键页；
+///   * 能配的都在这：schema 覆盖全部配置项，另有独立的热键分组；
 ///   * 改完即时生效：写入后立刻落盘并广播（重启后才生效的项不存在）；
-///   * 冲突绝不静默：三层检测结果显示在每行徽标 + 顶部横幅上，阻断策略可显式选择。
+///   * 冲突绝不静默：三层检测结果显示在键位按钮的红色态 + 顶部横幅上，阻断策略可显式选择。
+///
+/// 硬规则：界面代码里不允许出现字面量色值 —— XAML 用 {StaticResource Focal.*}，
+/// C# 一律走 <see cref="FocalPalette"/>。
 /// </summary>
 internal partial class SettingsWindow : Window
 {
     private readonly SettingsService _settings;
     private readonly List<HotkeyRow> _hotkeyRows = [];
+    private readonly List<SectionLink> _sections = [];
     private readonly Dictionary<string, TextBlock> _errorLabels = [];
     private readonly DispatcherTimer _saveTimer;
 
     private string? _recordingActionId;
     private IReadOnlyList<HotkeyRegistrationResult> _probeResults = [];
+    private string? _conflictFocusActionId;
+    private string? _errorSourceKey;
+    private bool _hotkeyBannerDismissed;
+    private bool _pendingSave;
     private bool _building;
 
     private TextBlock? _versionText;
@@ -50,12 +70,14 @@ internal partial class SettingsWindow : Window
         _saveTimer.Tick += (_, _) =>
         {
             _saveTimer.Stop();
+            _pendingSave = false;
             _settings.Save();
+            UpdateBanner();
         };
 
         PreviewKeyDown += OnPreviewKeyDown;
+        ApplyIconFallbacks();
         BuildUi();
-        RefreshHotkeyStatuses(probe: false);
     }
 
     /// <summary>热键绑定变化（用户改键位/停用）后由宿主重新注册。</summary>
@@ -64,22 +86,22 @@ internal partial class SettingsWindow : Window
     /// <summary>L1 试注册探针（由宿主实现：放开自己的键 → 逐个试注册 → 恢复）。</summary>
     public Func<IReadOnlyList<HotkeyBinding>, IReadOnlyList<HotkeyRegistrationResult>>? ProbeHotkeys { get; set; }
 
-    /// <summary>诊断信息（虚拟桌面、采集后端、贴图数量…），维护页展示。</summary>
+    /// <summary>诊断信息（虚拟桌面、采集后端、贴图数量…），维护分组展示。</summary>
     public Func<string>? DiagnosticsProvider { get; set; }
 
-    /// <summary>清理贴图备份（维护页按钮）。</summary>
+    /// <summary>清理贴图备份（维护分组按钮）。</summary>
     public Action? ClearPinBackups { get; set; }
 
-    /// <summary>更新链路（宿主注入）。为空时维护页会如实说"更新服务不可用"，而不是假装能检查。</summary>
+    /// <summary>更新链路（宿主注入）。为空时维护分组会如实说"更新服务不可用"，而不是假装能检查。</summary>
     public UpdateCoordinator? Updater { get; set; }
 
     /// <summary>
-    /// 维护页「下载并安装」的实现（宿主负责：下载 → 校验 → 询问 → 安装并退出自身）。
+    /// 维护分组「下载并安装」的实现（宿主负责：下载 → 校验 → 询问 → 安装并退出自身）。
     /// 返回值是直接显示给用户的状态文字。
     /// </summary>
     public Func<UpdateManifest, Task<string>>? InstallUpdate { get; set; }
 
-    /// <summary>维护页「导出诊断包…」的实现（宿主真正打包），返回值是显示给用户的状态文字。</summary>
+    /// <summary>维护分组「导出诊断包…」的实现（宿主真正打包），返回值是显示给用户的状态文字。</summary>
     public Func<Task<string>>? ExportDiagnostics { get; set; }
 
     /// <summary>配置发生变化（宿主可据此刷新托盘文案等）。</summary>
@@ -97,7 +119,11 @@ internal partial class SettingsWindow : Window
     /// <summary>界面上实际出现的热键行数（应等于动作表条目数）。</summary>
     internal int HotkeyRowCount => _hotkeyRows.Count;
 
-    internal int TabCount => Tabs.Items.Count;
+    /// <summary>
+    /// 导航分区数：9 个配置分组 + 快捷键 + 维护（自检断言"分组一个都没漏"）。
+    /// 左导航里另有一条分隔线，它不是一个分组，所以不在这里计数。
+    /// </summary>
+    internal int TabCount => _sections.Count;
 
     /// <summary>
     /// 把一次按键转换成键位文本（录制控件用）。
@@ -126,19 +152,251 @@ internal partial class SettingsWindow : Window
     internal string StatusBadgeFor(string actionId) =>
         _hotkeyRows.FirstOrDefault(row => row.Definition.Id == actionId)?.StatusText.Text ?? string.Empty;
 
-    /// <summary>维护页显示的版本串（自检断言"维护页真的显示了版本号"）。</summary>
+    /// <summary>维护分组显示的版本串（自检断言"维护分组真的显示了版本号"）。</summary>
     internal string MaintenanceVersionText => _versionText?.Text ?? string.Empty;
 
-    /// <summary>维护页的更新结果文字（自检断言检查结论真的写进了界面）。</summary>
+    /// <summary>维护分组的更新结果文字（自检断言检查结论真的写进了界面）。</summary>
     internal string UpdateStatusText => _updateStatusText?.Text ?? string.Empty;
 
-    /// <summary>维护页是否有「检查更新」与「下载并安装」入口。</summary>
+    /// <summary>维护分组是否有「检查更新」与「下载并安装」入口。</summary>
     internal bool HasUpdateEntry => _checkUpdatesButton is not null && _installUpdateButton is not null;
 
     /// <summary>「下载并安装」当前是否可用（检查到新版本后才放开）。</summary>
     internal bool CanInstallUpdate => _installUpdateButton?.IsEnabled == true;
 
+    /// <summary>维护分组是否有「导出诊断包…」入口。</summary>
+    internal bool HasDiagnosticsEntry => _exportDiagnosticsButton is not null;
+
+    /// <summary>维护分组的诊断包状态文字（自检断言结论真的写进了界面）。</summary>
+    internal string DiagnosticsStatusText => _diagnosticsStatusText?.Text ?? string.Empty;
+
+    // ---------------------------------------------------------------- 令牌 / 组件便捷方法
+
+    // 颜色、度量、样式一律从 FocalPalette 取（令牌唯一来源是 Theme/FocalTheme.xaml）。
+    private static Style StyleOf(string key) => FocalPalette.Style(key);
+
+    private static Brush BrushOf(string key) => FocalPalette.Brush(key);
+
+    private static double MetricOf(string key) => FocalPalette.Metric(key);
+
+    /// <summary>
+    /// icons.js 的图标键名 → WPF 图标几何。设计包里的 64 个图标尚未全部落地到
+    /// Theme/FocalIcons.xaml 时，先用语义最近的已交付图标顶上；图标补齐后这里自动失效
+    /// （每次都重新解析，不缓存"缺失"结论）。
+    /// </summary>
+    private static readonly Dictionary<string, string> IconFallbacks = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["clipboard"] = "copy",
+        ["text"] = "pencil",
+        ["keyboard"] = "grid",
+        ["speed"] = "chevronRight",
+        ["warning"] = "info",
+        ["upload"] = "save",
+        ["download"] = "save",
+        ["folder"] = "copy",
+    };
+
+    private static string IconName(string icon) =>
+        FocalIcon.Resolve(icon) is null && IconFallbacks.TryGetValue(icon, out string? fallback) ? fallback : icon;
+
+    private static FocalIcon Glyph(string icon, double size, Brush? foreground = null)
+    {
+        var glyph = new FocalIcon
+        {
+            Icon = IconName(icon),
+            Size = size,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        // 明确给了颜色才覆盖：留 null 时图标跟随祖先控件的前景色（hover / 选中态才会跟着变）
+        if (foreground is not null)
+        {
+            glyph.Foreground = foreground;
+        }
+
+        return glyph;
+    }
+
+    /// <summary>
+    /// 跟随祖先控件前景色的文字。不写死颜色，所以按钮的 hover / 选中 / 禁用态能带着它一起变；
+    /// 也避免隐式 TextBlock 样式把按钮里的字压成 on-dark（主按钮是墨字）。
+    /// </summary>
+    private static TextBlock InheritText(string text, double fontSize, double leftMargin = 6) =>
+        InheritText(text, fontSize, leftMargin, FocalPalette.TextFont, FontWeights.Normal);
+
+    /// <summary>等宽版本：键位、数值、路径这类"数据"文字（DESIGN §3：数据走 Cascadia + tabular-nums）。</summary>
+    private static TextBlock InheritDataText(string text, double fontSize, double leftMargin = 0) =>
+        InheritText(text, fontSize, leftMargin, FocalPalette.DataFont, FontWeights.Medium);
+
+    private static TextBlock InheritText(string text, double fontSize, double leftMargin, FontFamily font, FontWeight weight)
+    {
+        var block = new TextBlock
+        {
+            Text = text,
+            FontFamily = font,
+            FontSize = fontSize,
+            FontWeight = weight,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(leftMargin, 0, 0, 0),
+        };
+
+        block.SetBinding(TextBlock.ForegroundProperty, new Binding(nameof(Control.Foreground))
+        {
+            RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor, typeof(Control), 1),
+        });
+
+        return block;
+    }
+
+    /// <summary>
+    /// 下拉项的显示模板：文字跟随 ComboBoxItem 的前景色（悬停时翻成墨字，压得住琥珀底）。
+    /// 选中后同一段模板会渲染进 ComboBox 的显示区，那里找不到 ComboBoxItem 祖先，
+    /// 于是回落到继承色（= 控件的 on-dark）——正好是设计要的两种状态。
+    /// </summary>
+    private static DataTemplate OptionTemplate()
+    {
+        var text = new FrameworkElementFactory(typeof(TextBlock));
+        text.SetBinding(TextBlock.TextProperty, new Binding("."));
+        text.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center);
+        text.SetBinding(TextBlock.ForegroundProperty, new Binding(nameof(Control.Foreground))
+        {
+            RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor, typeof(ComboBoxItem), 1),
+        });
+
+        return new DataTemplate { VisualTree = text };
+    }
+
+    /// <summary>XAML 里声明的图标也走一次回退判定（图标名写的是设计稿的名字）。</summary>
+    private void ApplyIconFallbacks()
+    {
+        TitleBarIcon.Icon = IconName("gear");
+        CloseButtonIcon.Icon = IconName("x");
+        StatusBannerIcon.Icon = IconName("check");
+        ErrorBannerIcon.Icon = IconName("warning");
+        HotkeyBannerIcon.Icon = IconName("warning");
+        ProbeIcon.Icon = IconName("keyboard");
+        ExportIcon.Icon = IconName("upload");
+        ImportIcon.Icon = IconName("download");
+    }
+
+    // ---------------------------------------------------------------- 文案（标题之外的"一句人话"）
+
+    /// <summary>
+    /// 设置行的说明必须是一句**具体的**话（DESIGN §4）：说清什么时候该改这个开关。
+    /// schema 的描述是兜底，这里给每项一句更贴操作的说明（schema 只读，不能改）。
+    /// </summary>
+    private static readonly Dictionary<string, string> Hints = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // 截图
+        ["CaptureBackend"] = "自动按 WGC → DXGI → GDI 降级；抓不到画面时再手动指定。",
+        ["CopyOnCapture"] = "确认时同时写 DIB 与 PNG 两种格式，粘到聊天窗口不会糊。",
+        ["SaveOnCapture"] = "确认时按文件名模板落盘到默认目录，不弹「另存为」对话框。",
+        ["PinOnCapture"] = "确认后立刻钉在屏幕上，等价于在遮罩里按 F3。",
+        ["OverlayDimOpacity"] = "只压暗未选中区域。屏幕本身很暗时降到 30% 以下更舒服。",
+        ["ElementDetectionEnabled"] = "光标下的控件会高亮，单击即按控件边界选区。",
+        ["ElementDetectionUseUia"] = "关掉后只用窗口矩形回退，只能识别整窗。",
+        // 取色器
+        ["ColorCopyFormat"] = "按 C 取色时写进剪贴板的表示法；「四种」会写成多行。",
+        ["ColorHistoryRetention"] = "最近取到的颜色保留多少个，可在遮罩与托盘里复用。",
+        ["OverlayShowColorHistory"] = "在遮罩左下角画出最近取到的色块，按对应数字键直接复用。",
+        // 保存
+        ["SaveDirectory"] = @"留空则存到「图片\WhSnap」；目录不存在时保存前会自动创建。",
+        ["FileNameTemplate"] = "支持 {date} {time} {w} {h} 占位符，可自定义文件名。",
+        ["JpegQuality"] = "另存为 .jpg 时的压缩质量，95 以上肉眼无损。",
+        // 贴图
+        ["PinDefaultOpacity"] = "新贴图出现时的不透明度；之后每张贴图仍可单独调整。",
+        ["PinClickThroughDefault"] = "默认关闭：穿透后点击落到下层窗口，只能从托盘关掉。",
+        ["PinZoomStep"] = "每格滚轮的缩放倍率，1.1 表示每滚一格放大 10%。",
+        ["PinSnapToEdges"] = "松手时把贴图吸到最近的屏幕边缘，不用再像素级对齐。",
+        ["PinSnapTolerance"] = "离边缘多少物理像素以内就触发吸附；调小可以贴得更随意。",
+        ["PinTopmostNew"] = "新贴图默认压在其它窗口之上，单张仍可取消置顶。",
+        ["PinBackupEnabled"] = "把贴图的几何与层级定期写进备份，崩溃或重启后可恢复。",
+        ["PinBackupIntervalSeconds"] = "贴图变动后至少等这么久才落盘一次，避免拖动时疯狂写盘。",
+        ["PinBackupRetention"] = "保留最近多少份备份会话，超出的旧会话会被清理。",
+        ["RestorePinsOnStartup"] = "启动时恢复上次贴图：几何、层级、透明度与穿透状态。",
+        // 剪贴板
+        ["ClipboardWatchEnabled"] = "复制图像 / 文件 / 文本就自动贴到屏幕上，不回贴自己的截图。",
+        // 文本贴图
+        ["TextPinFontFamily"] = "文本与 HTML 贴图用的字体名，例：Microsoft YaHei UI。",
+        ["TextPinFontSize"] = "按物理像素渲染，1:1 不模糊；改大后内容会重新排版。",
+        ["TextPinMaxWidth"] = "超过这个宽度就自动换行，避免一张贴图横穿整个桌面。",
+        ["TextPinMaxHeight"] = "超过这个高度按省略号截断，防止一张贴图吃掉几百 MB 内存。",
+        ["TextPinPadding"] = "文字四周留出的空白，0 表示紧贴边缘。",
+        ["TextPinForeground"] = "文字颜色，支持十六进制写法，也支持 rgb() 与 hsl()。",
+        ["TextPinBackground"] = "贴图底色，写 transparent 可以得到透明背景。",
+        // 标注
+        ["AnnotationDefaultTool"] = "打开标注编辑器时默认选中的工具，工具栏里随时可以换。",
+        ["AnnotationStrokeColor"] = "新画的线、箭头、矩形的颜色；工具栏数字键 1-8 也能换。",
+        ["AnnotationStrokeWidth"] = "新图形的线宽，画的过程中按 [ 和 ] 可以临时加减。",
+        ["AnnotationFillOpacity"] = "矩形与椭圆的填充浓度，0 表示只画轮廓不填充。",
+        ["AnnotationFontSize"] = "文字与序号按物理像素渲染，导出后与屏幕所见一致。",
+        ["AnnotationMosaicBlock"] = "马赛克格子边长，越大越糊；对付小字建议 8 以上。",
+        ["AnnotationBlurRadius"] = "盒式模糊半径（两趟可分离，近似高斯），越大越糊。",
+        ["AnnotationEraserRadius"] = "橡皮擦的笔尖半径，只擦掉笔画，不改动原图。",
+        ["AnnotationBadgeStart"] = "序号标注的起始数字，多张图接着编号时可以调大。",
+        ["AnnotationPalette"] = "逗号分隔的颜色列表，显示成工具栏色块（支持十六进制）。",
+        // 系统
+        ["AutoStart"] = "随 Windows 登录自动启动（当前用户，不需要管理员权限）。",
+        ["HotkeyConflictPolicy"] = "block 冲突时弹窗询问；save-disabled 保存但停用。",
+        // 更新
+        ["CheckForUpdatesOnStartup"] = "只读一份很小的 update.json，不会自动下载。",
+        ["UpdateChannel"] = "稳定通道只接受正式版，测试通道同时接受预览版。",
+        ["UpdateAutoDownload"] = "下载后先校验 SHA-256 再提示安装。",
+        ["UpdateManifestUrl"] = "默认取 GitHub Releases 的 update.json。",
+    };
+
+    private static string HintFor(SettingDefinition definition) =>
+        Hints.TryGetValue(definition.Key, out string? hint) && !string.IsNullOrWhiteSpace(hint)
+            ? hint
+            : string.IsNullOrWhiteSpace(definition.Description)
+                ? $"{definition.Label}：改完立即生效。"
+                : definition.Description;
+
+    /// <summary>分组标题右侧的一句话（"7 项 · 采集后端、确认动作与元素检测"）。</summary>
+    private static readonly Dictionary<string, string> GroupSummaries = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["截图"] = "采集后端、确认动作与元素检测",
+        ["取色器"] = "复制格式、历史条数与遮罩里的色块",
+        ["保存"] = "目录、文件名模板与 JPEG 质量",
+        ["贴图"] = "透明度、吸附、备份与启动恢复",
+        ["剪贴板"] = "复制即贴图的监听开关",
+        ["文本贴图"] = "字体、尺寸、留白与配色",
+        ["标注"] = "默认工具、线宽、马赛克与调色板",
+        ["系统"] = "开机自启与热键冲突策略",
+        ["更新"] = "检查时机、更新通道与下载行为",
+    };
+
+    private static readonly Dictionary<string, string> GroupIcons = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["截图"] = "crop",
+        ["取色器"] = "eyedropper",
+        ["保存"] = "save",
+        ["贴图"] = "pin",
+        ["剪贴板"] = "clipboard",
+        ["文本贴图"] = "text",
+        ["标注"] = "pencil",
+        ["系统"] = "monitor",
+        ["更新"] = "download",
+    };
+
+    private static string GroupSummary(string group) =>
+        GroupSummaries.TryGetValue(group, out string? summary) ? summary : "该分组的全部设置项";
+
+    private static string GroupIcon(string group) =>
+        GroupIcons.TryGetValue(group, out string? icon) ? icon : "gear";
+
     // ---------------------------------------------------------------- 界面构建
+
+    private sealed class SectionLink
+    {
+        public required string Title { get; init; }
+
+        public required FrameworkElement Target { get; init; }
+
+        public required ToggleButton Item { get; init; }
+
+        public required FocalIcon Icon { get; init; }
+    }
 
     private void BuildUi()
     {
@@ -146,87 +404,156 @@ internal partial class SettingsWindow : Window
 
         try
         {
-            Tabs.Items.Clear();
+            _hotkeyRows.Clear();
+            _sections.Clear();
+            _errorLabels.Clear();
+            _renderedKeys.Clear();
+            _recordingActionId = null;
+            _conflictFocusActionId = null;
+            _hotkeyBannerDismissed = false;
+            RailItems.Items.Clear();
+            ContentHost.Children.Clear();
 
             foreach (string group in SettingsSchema.Groups)
             {
-                Tabs.Items.Add(BuildSettingTab(group));
+                AddSettingSection(group);
             }
 
-            Tabs.Items.Add(BuildHotkeyTab());
-            Tabs.Items.Add(BuildMaintenanceTab());
+            // 分隔线只在导航里出现，不算一个分组（TabCount 因此是 9 + 2 = 11）
+            RailItems.Items.Add(BuildRailSeparator());
+
+            AddHotkeySection();
+            AddMaintenanceSection();
+            SelectFirstSection();
         }
         finally
         {
             _building = false;
         }
+
+        UpdateConfigBanner();
+        RefreshHotkeyStatuses(probe: false);
     }
 
-    private TabItem BuildSettingTab(string group)
+    private void AddSettingSection(string group)
     {
-        var panel = new StackPanel { Margin = new Thickness(4) };
+        var definitions = SettingsSchema.InGroup(group);
 
-        foreach (var definition in SettingsSchema.InGroup(group))
+        string hint = $"{definitions.Count.ToString(CultureInfo.InvariantCulture)} 项 · {GroupSummary(group)}";
+        var header = BuildSectionHeader(group, hint);
+        var card = GroupCard(definitions.Select(BuildSettingRow));
+
+        ContentHost.Children.Add(header);
+        ContentHost.Children.Add(card);
+        AddRailItem(group, GroupIcon(group), definitions.Count.ToString(CultureInfo.InvariantCulture), header);
+    }
+
+    /// <summary>分组标题：15/600 + 一句"这一组管什么"（12/400，muted）。</summary>
+    private static FrameworkElement BuildSectionHeader(string title, string hint)
+    {
+        var line = new StackPanel
         {
-            panel.Children.Add(BuildSettingRow(definition));
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, MetricOf("Focal.SpaceMd"), 0, MetricOf("Focal.SpaceMd")),
+        };
+
+        line.Children.Add(new TextBlock { Text = title, Style = StyleOf("Focal.SubtitleText") });
+        line.Children.Add(new TextBlock
+        {
+            Text = hint,
+            Style = StyleOf("Focal.CaptionText"),
+            Margin = new Thickness(MetricOf("Focal.SpaceMd"), 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Bottom,
+        });
+
+        return line;
+    }
+
+    /// <summary>分组卡：Focal.Card（10 圆角 + 发丝线 + 平铺，零阴影），行之间靠行自身的下边线分隔。</summary>
+    private static Border GroupCard(IEnumerable<FrameworkElement> rows)
+    {
+        var list = rows.ToList();
+        var stack = new StackPanel();
+
+        for (int i = 0; i < list.Count; i++)
+        {
+            // 最后一行不带下边线，避免和卡片的 1px 边框叠成两条
+            if (i == list.Count - 1 && list[i] is Border last)
+            {
+                last.BorderThickness = new Thickness(0);
+            }
+
+            stack.Children.Add(list[i]);
         }
 
-        return CreateTab(group, panel);
+        return new Border
+        {
+            Style = StyleOf("Focal.Card"),
+            Padding = new Thickness(0),
+            Child = stack,
+        };
     }
 
-    private static TabItem CreateTab(string header, UIElement content) => new()
+    /// <summary>
+    /// 设置行的固定三段式：标题 14/400（不加粗）+ 一句人话 12/400 + 右侧控件。
+    /// 控件顶端对齐到标题第一行（对应 focal.css 的 .f-row__ctl padding-top:2px）。
+    /// </summary>
+    private Border BuildRow(string label, string hint, FrameworkElement? control, out TextBlock errorText, out StackPanel main)
     {
-        Header = header,
-        Content = new ScrollViewer
+        main = new StackPanel { VerticalAlignment = VerticalAlignment.Top };
+        main.Children.Add(new TextBlock { Text = label, Style = StyleOf("Focal.RowLabel") });
+
+        if (!string.IsNullOrWhiteSpace(hint))
         {
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            Padding = new Thickness(12),
-            Content = content,
-        },
-        Background = new SolidColorBrush(Color.FromRgb(0x1B, 0x1B, 0x1B)),
-        Foreground = new SolidColorBrush(Color.FromRgb(0xF2, 0xF2, 0xF2)),
-    };
+            main.Children.Add(new TextBlock { Text = hint, Style = StyleOf("Focal.RowHint") });
+        }
+
+        errorText = new TextBlock
+        {
+            Style = StyleOf("Focal.CaptionText"),
+            Foreground = BrushOf("Focal.SignalDangerBrush"),
+            Visibility = Visibility.Collapsed,
+            Margin = new Thickness(0, MetricOf("Focal.SpaceXs"), 0, 0),
+        };
+
+        main.Children.Add(errorText);
+
+        var row = new Border { Style = StyleOf("Focal.Row") };
+
+        if (control is null)
+        {
+            row.Child = main;
+            return row;
+        }
+
+        control.VerticalAlignment = VerticalAlignment.Top;
+        control.Margin = new Thickness(MetricOf("Focal.SpaceLg"), 2, 0, 0);
+
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        Grid.SetColumn(main, 0);
+        Grid.SetColumn(control, 1);
+        grid.Children.Add(main);
+        grid.Children.Add(control);
+
+        row.Child = grid;
+        return row;
+    }
 
     private FrameworkElement BuildSettingRow(SettingDefinition definition)
     {
-        var grid = new Grid { Margin = new Thickness(0, 7, 0, 7) };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(330) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        FrameworkElement control = BuildControl(definition);
+        string hint = HintFor(definition);
 
-        var labels = new StackPanel();
-        labels.Children.Add(new TextBlock { Text = definition.Label, FontWeight = FontWeights.SemiBold });
+        AutomationProperties.SetName(control, definition.Label);
+        AutomationProperties.SetHelpText(control, hint);
 
-        if (!string.IsNullOrWhiteSpace(definition.Description))
-        {
-            labels.Children.Add(new TextBlock
-            {
-                Text = definition.Description,
-                Foreground = new SolidColorBrush(Color.FromRgb(0x9A, 0x9A, 0x9A)),
-                FontSize = 11,
-                Margin = new Thickness(0, 2, 12, 0),
-            });
-        }
-
-        var error = new TextBlock
-        {
-            Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x7A, 0x7A)),
-            FontSize = 11,
-            Visibility = Visibility.Collapsed,
-            Margin = new Thickness(0, 2, 0, 0),
-        };
-
+        var row = BuildRow(definition.Label, hint, control, out TextBlock error, out _);
         _errorLabels[definition.Key] = error;
-        labels.Children.Add(error);
-
-        Grid.SetColumn(labels, 0);
-        grid.Children.Add(labels);
-
-        var control = BuildControl(definition);
-        Grid.SetColumn(control, 1);
-        grid.Children.Add(control);
-
         _renderedKeys.Add(definition.Key);
-        return grid;
+        return row;
     }
 
     private FrameworkElement BuildControl(SettingDefinition definition)
@@ -237,23 +564,36 @@ internal partial class SettingsWindow : Window
         {
             case SettingKind.Bool:
             {
-                var checkBox = new CheckBox
+                // 开关（34×18 胶囊），不是勾选框：这是"开/关状态"，圆的东西是"读的"
+                var toggle = new ToggleButton
                 {
+                    Style = StyleOf("Focal.Switch"),
                     IsChecked = current.Equals("true", StringComparison.OrdinalIgnoreCase),
-                    VerticalAlignment = VerticalAlignment.Center,
+                    ToolTip = HintFor(definition),
                 };
 
-                checkBox.Checked += (_, _) => Apply(definition.Key, "true", checkBox);
-                checkBox.Unchecked += (_, _) => Apply(definition.Key, "false", checkBox);
-                return checkBox;
+                toggle.Checked += (_, _) => Apply(definition.Key, "true", toggle);
+                toggle.Unchecked += (_, _) => Apply(definition.Key, "false", toggle);
+                return toggle;
             }
 
             case SettingKind.Choice:
             {
-                var combo = new ComboBox { Width = 240, HorizontalAlignment = HorizontalAlignment.Left };
+                var combo = new ComboBox
+                {
+                    Width = 260,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    ToolTip = HintFor(definition),
+                };
+
                 foreach (var option in definition.Options ?? [])
                 {
-                    combo.Items.Add(new ComboBoxItem { Content = option.Label, Tag = option.Value });
+                    combo.Items.Add(new ComboBoxItem
+                    {
+                        Content = option.Label,
+                        Tag = option.Value,
+                        ContentTemplate = OptionTemplate(),
+                    });
                 }
 
                 foreach (ComboBoxItem item in combo.Items)
@@ -280,30 +620,78 @@ internal partial class SettingsWindow : Window
             case SettingKind.Double:
             {
                 bool isDouble = definition.Kind == SettingKind.Double;
-                double value = double.TryParse(current, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double parsed)
+                double value = double.TryParse(current, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed)
                     ? parsed
                     : definition.Min;
 
                 var panel = new StackPanel { Orientation = Orientation.Horizontal };
 
+                // 「遮罩暗度」把"45% 到底多黑"直接画出来（design/focal/surfaces/settings.html 的预览）
+                Rectangle? scrim = null;
+                if (definition.Key.Equals("OverlayDimOpacity", StringComparison.OrdinalIgnoreCase))
+                {
+                    panel.Children.Add(BuildDimPreview(Math.Clamp(value, definition.Min, definition.Max), out scrim));
+                }
+
                 var textBox = new TextBox
                 {
-                    Text = current,
-                    Width = 70,
+                    Style = StyleOf("Focal.InputData"),
+                    Width = 64,
+                    TextAlignment = TextAlignment.Right,
                     VerticalAlignment = VerticalAlignment.Center,
+                    ToolTip = "可以直接输入精确值（回车或离开焦点生效）",
                 };
 
                 var slider = new Slider
                 {
+                    Style = StyleOf("Focal.Slider"),
                     Minimum = definition.Min,
                     Maximum = definition.Max,
                     Value = Math.Clamp(value, definition.Min, definition.Max),
-                    Width = 190,
-                    Margin = new Thickness(0, 0, 8, 0),
-                    VerticalAlignment = VerticalAlignment.Center,
+                    Width = 148,
                     TickFrequency = definition.Step > 0 ? definition.Step : 1,
                     IsSnapToTickEnabled = definition.Step > 0,
+                    SmallChange = definition.Step > 0 ? definition.Step : 1,
+                    LargeChange = definition.Step > 0 ? definition.Step * 2 : 2,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    ToolTip = HintFor(definition),
                 };
+
+                string Format(double number) => isDouble
+                    ? number.ToString("0.####", CultureInfo.InvariantCulture)
+                    : ((int)Math.Round(number)).ToString(CultureInfo.InvariantCulture);
+
+                void Display(double number)
+                {
+                    textBox.Text = Format(number); // 数值走等宽（Focal.InputData = DataFont + 表格数字）
+
+                    if (scrim is not null)
+                    {
+                        scrim.Fill = FocalPalette.Scrim(number);
+                    }
+                }
+
+                Display(Math.Clamp(value, definition.Min, definition.Max));
+
+                void CommitNumber()
+                {
+                    if (!double.TryParse(textBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double typed))
+                    {
+                        Display(slider.Value); // 打错的输入退回当前生效值
+                        return;
+                    }
+
+                    double normalized = Math.Round(Math.Clamp(typed, definition.Min, definition.Max), 4);
+
+                    if (Math.Abs(slider.Value - normalized) > 0.0001)
+                    {
+                        slider.Value = normalized; // 触发 ValueChanged → Apply
+                        return;
+                    }
+
+                    Display(normalized);
+                    Apply(definition.Key, Format(normalized), textBox);
+                }
 
                 slider.ValueChanged += (_, args) =>
                 {
@@ -312,20 +700,18 @@ internal partial class SettingsWindow : Window
                         return;
                     }
 
-                    string text = isDouble
-                        ? args.NewValue.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)
-                        : ((int)Math.Round(args.NewValue)).ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-                    textBox.Text = text;
-                    Apply(definition.Key, text, slider);
+                    double normalized = Math.Round(args.NewValue, 4);
+                    Display(normalized);
+                    Apply(definition.Key, Format(normalized), slider);
                 };
 
-                textBox.LostFocus += (_, _) => Apply(definition.Key, textBox.Text, textBox);
+                textBox.LostFocus += (_, _) => CommitNumber();
                 textBox.KeyDown += (_, args) =>
                 {
                     if (args.Key == Key.Enter)
                     {
-                        Apply(definition.Key, textBox.Text, textBox);
+                        CommitNumber();
+                        args.Handled = true;
                     }
                 };
 
@@ -337,8 +723,10 @@ internal partial class SettingsWindow : Window
                     panel.Children.Add(new TextBlock
                     {
                         Text = definition.Unit,
-                        Margin = new Thickness(4, 0, 0, 0),
+                        Style = StyleOf("Focal.CaptionText"),
+                        Foreground = BrushOf("Focal.OnDarkFaintBrush"),
                         VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(MetricOf("Focal.SpaceXs"), 0, 0, 0),
                     });
                 }
 
@@ -348,25 +736,48 @@ internal partial class SettingsWindow : Window
             case SettingKind.Color:
             {
                 var panel = new StackPanel { Orientation = Orientation.Horizontal };
-                var textBox = new TextBox { Text = current, Width = 110 };
+
                 var swatch = new Border
                 {
                     Width = 22,
                     Height = 22,
-                    BorderBrush = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66)),
+                    CornerRadius = FocalPalette.RadiusControl,
+                    BorderBrush = BrushOf("Focal.HairlineDarkStrongBrush"),
                     BorderThickness = new Thickness(1),
-                    Background = BuildColorBrush(current),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(MetricOf("Focal.SpaceSm"), 0, 0, 0),
+                    Background = UserColorBrush(current),
                 };
 
-                textBox.LostFocus += (_, _) => Apply(definition.Key, textBox.Text, swatch);
+                var textBox = new TextBox
+                {
+                    Style = StyleOf("Focal.InputData"),
+                    Width = 128,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    ToolTip = HintFor(definition),
+                };
+
+                textBox.Text = current;
+
+                void CommitColor()
+                {
+                    Apply(definition.Key, textBox.Text, textBox);
+
+                    // 写入失败时读回来的是旧值，色块不会跟着错误输入走
+                    swatch.Background = UserColorBrush(SettingsBinder.Read(Settings, definition.Key));
+                }
+
+                textBox.LostFocus += (_, _) => CommitColor();
                 textBox.KeyDown += (_, args) =>
                 {
                     if (args.Key == Key.Enter)
                     {
-                        Apply(definition.Key, textBox.Text, swatch);
+                        CommitColor();
+                        args.Handled = true;
                     }
                 };
 
+                AutomationProperties.SetName(swatch, definition.Label + " 当前色");
                 panel.Children.Add(textBox);
                 panel.Children.Add(swatch);
                 return panel;
@@ -375,9 +786,27 @@ internal partial class SettingsWindow : Window
             case SettingKind.DirectoryPath:
             {
                 var panel = new StackPanel { Orientation = Orientation.Horizontal };
-                var textBox = new TextBox { Text = current, Width = 280 };
 
-                var browse = new Button { Content = "浏览…" };
+                var textBox = new TextBox
+                {
+                    Style = StyleOf("Focal.InputData"),
+                    Width = 300,
+                    Text = current,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    ToolTip = HintFor(definition),
+                };
+
+                var browse = new Button
+                {
+                    Style = StyleOf("Focal.Button.Small"),
+                    Content = InheritText("浏览…", FocalPalette.CaptionSize),
+                    Margin = new Thickness(MetricOf("Focal.SpaceSm"), 0, 0, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    ToolTip = "选一个目录",
+                };
+
+                AutomationProperties.SetName(browse, "浏览" + definition.Label);
+
                 browse.Click += (_, _) =>
                 {
                     var dialog = new OpenFolderDialog { Title = $"选择{definition.Label}" };
@@ -386,7 +815,7 @@ internal partial class SettingsWindow : Window
                         dialog.InitialDirectory = textBox.Text;
                     }
 
-                    if (dialog.ShowDialog() == true)
+                    if (dialog.ShowDialog(this) == true)
                     {
                         textBox.Text = dialog.FolderName;
                         Apply(definition.Key, textBox.Text, textBox);
@@ -394,6 +823,15 @@ internal partial class SettingsWindow : Window
                 };
 
                 textBox.LostFocus += (_, _) => Apply(definition.Key, textBox.Text, textBox);
+                textBox.KeyDown += (_, args) =>
+                {
+                    if (args.Key == Key.Enter)
+                    {
+                        Apply(definition.Key, textBox.Text, textBox);
+                        args.Handled = true;
+                    }
+                };
+
                 panel.Children.Add(textBox);
                 panel.Children.Add(browse);
                 return panel;
@@ -401,92 +839,227 @@ internal partial class SettingsWindow : Window
 
             default:
             {
-                var textBox = new TextBox { Text = current, Width = 280 };
+                var textBox = new TextBox
+                {
+                    Style = StyleOf("Focal.Input"),
+                    Width = 300,
+                    Text = current,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    ToolTip = HintFor(definition),
+                };
+
                 textBox.LostFocus += (_, _) => Apply(definition.Key, textBox.Text, textBox);
                 textBox.KeyDown += (_, args) =>
                 {
                     if (args.Key == Key.Enter)
                     {
                         Apply(definition.Key, textBox.Text, textBox);
+                        args.Handled = true;
                     }
                 };
 
-                return textBox;
+                return string.IsNullOrWhiteSpace(definition.Placeholder)
+                    ? textBox
+                    : WithWatermark(textBox, definition.Placeholder!);
             }
         }
     }
 
-    private static Brush BuildColorBrush(string text) =>
-        ColorValue.TryParse(text, out var color)
-            ? new SolidColorBrush(Color.FromRgb(color.R, color.G, color.B))
-            : Brushes.Transparent;
+    /// <summary>把用户配置里的颜色画成色块（颜色来自用户内容，不是界面主题；取色入口仍是 FocalPalette）。</summary>
+    private static Brush UserColorBrush(string? text) =>
+        ColorValue.TryParse(text ?? string.Empty, out var color)
+            ? FocalPalette.FromRgb(color)
+            : BrushOf("Focal.Obsidian600Brush");
 
-    private void Apply(string key, string? value, FrameworkElement source)
+    /// <summary>输入框的占位文字（WPF 没有原生 placeholder，用一层不可点中的说明文字顶替）。</summary>
+    private static FrameworkElement WithWatermark(TextBox box, string placeholder)
     {
-        if (_building)
-        {
-            return;
-        }
+        double width = box.Width;
 
-        if (!SettingsBinder.Write(Settings, key, value, out string error))
+        var watermark = new TextBlock
         {
-            if (_errorLabels.TryGetValue(key, out var label))
+            Text = placeholder,
+            Style = StyleOf("Focal.CaptionText"),
+            Foreground = BrushOf("Focal.OnDarkFaintBrush"),
+            Margin = new Thickness(13, 0, 13, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            IsHitTestVisible = false,
+            Visibility = string.IsNullOrEmpty(box.Text) ? Visibility.Visible : Visibility.Collapsed,
+        };
+
+        box.TextChanged += (_, _) =>
+            watermark.Visibility = string.IsNullOrEmpty(box.Text) ? Visibility.Visible : Visibility.Collapsed;
+
+        box.Width = double.NaN;
+        box.HorizontalAlignment = HorizontalAlignment.Stretch;
+
+        var host = new Grid { Width = width };
+        host.Children.Add(box);
+        host.Children.Add(watermark);
+        return host;
+    }
+
+    /// <summary>遮罩暗度预览：纸色底 + 两个内容色块 + 一层按当前浓度缩放的暗幕。</summary>
+    private static FrameworkElement BuildDimPreview(double opacity, out Rectangle scrim)
+    {
+        var canvas = new Grid { Width = 58, Height = 28 };
+
+        canvas.Children.Add(new Rectangle { Fill = BrushOf("Focal.LinenBrush") });
+        canvas.Children.Add(new Rectangle
+        {
+            Width = 16,
+            Height = 16,
+            RadiusX = 2,
+            RadiusY = 2,
+            Fill = BrushOf("Focal.AccentBrush"),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(9, 6, 0, 0),
+        });
+
+        canvas.Children.Add(new Rectangle
+        {
+            Width = 16,
+            Height = 16,
+            RadiusX = 2,
+            RadiusY = 2,
+            Fill = BrushOf("Focal.MeasureElementBrush"),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(31, 6, 0, 0),
+        });
+
+        scrim = new Rectangle { Fill = FocalPalette.Scrim(opacity) };
+        canvas.Children.Add(scrim);
+
+        return new Border
+        {
+            Width = 58,
+            Height = 28,
+            BorderBrush = BrushOf("Focal.HairlineDarkBrush"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = FocalPalette.RadiusControl,
+            ClipToBounds = true,
+            SnapsToDevicePixels = true,
+            Child = canvas,
+            Margin = new Thickness(0, 0, MetricOf("Focal.SpaceSm"), 0),
+            ToolTip = "预览：这个浓度盖在屏幕内容上是什么样",
+        };
+    }
+
+    // ---------------------------------------------------------------- 左导航
+
+    private FrameworkElement BuildRailSeparator() => new Border
+    {
+        Height = 1,
+        Background = BrushOf("Focal.HairlineDarkBrush"),
+        Margin = new Thickness(
+            MetricOf("Focal.SpaceXs"),
+            MetricOf("Focal.SpaceSm"),
+            MetricOf("Focal.SpaceXs"),
+            MetricOf("Focal.SpaceSm")),
+    };
+
+    private ToggleButton AddRailItem(string title, string icon, string? count, FrameworkElement target)
+    {
+        // RailItem 的模板把内容左对齐（内容宽度 = 内容自身），所以宽度要自己算：
+        // 侧栏宽 − 左右外边距（8×2）− 左右内边距（8×2）
+        double contentWidth = MetricOf("Focal.RailWidth")
+                              - (2 * MetricOf("Focal.SpaceSm"))
+                              - (2 * MetricOf("Focal.SpaceSm"));
+
+        var grid = new Grid { Width = contentWidth };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var glyph = Glyph(icon, FocalPalette.IconMd, FocalPalette.OnDarkFaint);
+        var label = InheritText(title, FocalPalette.BodySize, MetricOf("Focal.SpaceSm"));
+
+        Grid.SetColumn(glyph, 0);
+        Grid.SetColumn(label, 1);
+        grid.Children.Add(glyph);
+        grid.Children.Add(label);
+
+        if (!string.IsNullOrEmpty(count))
+        {
+            var badge = new TextBlock
             {
-                label.Text = error;
-                label.Visibility = Visibility.Visible;
-            }
+                Text = count,
+                Style = StyleOf("Focal.DataCaptionText"),
+                Foreground = BrushOf("Focal.OnDarkFaintBrush"),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(MetricOf("Focal.SpaceSm"), 0, 0, 0),
+            };
 
+            Grid.SetColumn(badge, 2);
+            grid.Children.Add(badge);
+        }
+
+        var item = new ToggleButton
+        {
+            Style = StyleOf("Focal.RailItem"),
+            Content = grid,
+            ToolTip = $"跳到「{title}」",
+        };
+
+        AutomationProperties.SetName(item, title);
+        item.Click += (_, _) => SelectSection(target, item);
+
+        RailItems.Items.Add(item);
+        _sections.Add(new SectionLink { Title = title, Target = target, Item = item, Icon = glyph });
+        return item;
+    }
+
+    private void SelectFirstSection()
+    {
+        if (_sections.Count == 0)
+        {
             return;
         }
 
-        if (_errorLabels.TryGetValue(key, out var existing))
+        _sections[0].Item.IsChecked = true;
+        _sections[0].Icon.Foreground = FocalPalette.Accent;
+    }
+
+    private void SelectSection(FrameworkElement target, ToggleButton item)
+    {
+        foreach (var section in _sections)
         {
-            existing.Visibility = Visibility.Collapsed;
+            bool selected = ReferenceEquals(section.Item, item);
+            section.Item.IsChecked = selected;
+
+            // 选中项图标走琥珀（design/focal/focal.css .f-rail__item[aria-current=true] .f-i）
+            section.Icon.Foreground = selected ? FocalPalette.Accent : FocalPalette.OnDarkFaint;
         }
 
-        ScheduleSave();
-
-        // 系统集成与剪贴板监听需要宿主立刻反应
-        SettingsChanged?.Invoke();
-        UpdateBanner();
+        target.BringIntoView();
     }
 
-    private void ScheduleSave()
-    {
-        _saveTimer.Stop();
-        _saveTimer.Start();
-    }
+    private SectionLink? FindSection(string title) =>
+        _sections.FirstOrDefault(section => section.Title.Equals(title, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>立刻落盘（关闭设置窗口、改热键、导入后调用）。</summary>
-    public void SaveNow()
-    {
-        _saveTimer.Stop();
-        _settings.Save();
-    }
-
-    // ---------------------------------------------------------------- 热键页
+    // ---------------------------------------------------------------- 快捷键分组
 
     private sealed class HotkeyRow
     {
         public required HotkeyActionDefinition Definition { get; init; }
 
-        public required TextBlock KeysText { get; init; }
+        public required HotkeyScope Scope { get; init; }
+
+        public required ToggleButton Keycap { get; init; }
+
+        /// <summary>键帽上的键位文字（等宽；录制中换成提示语）。</summary>
+        public required TextBlock KeyText { get; init; }
 
         public required TextBlock StatusText { get; init; }
 
         public required TextBlock DetailText { get; init; }
     }
 
-    private TabItem BuildHotkeyTab()
+    private void AddHotkeySection()
     {
-        var panel = new StackPanel { Margin = new Thickness(4) };
-
-        panel.Children.Add(new TextBlock
-        {
-            Text = "全局热键会与整个系统抢键（L1 试注册判定）；遮罩/贴图窗口内的按键只在本程序的窗口里生效，不会与别的软件冲突。",
-            Foreground = new SolidColorBrush(Color.FromRgb(0x9A, 0x9A, 0x9A)),
-            Margin = new Thickness(0, 0, 0, 10),
-        });
+        var rows = new List<FrameworkElement>();
 
         foreach (HotkeyScope scope in Enum.GetValues<HotkeyScope>())
         {
@@ -496,101 +1069,143 @@ internal partial class SettingsWindow : Window
                 continue;
             }
 
-            panel.Children.Add(new TextBlock
-            {
-                Text = scope switch
-                {
-                    HotkeyScope.Global => "全局热键",
-                    HotkeyScope.Overlay => "遮罩内按键",
-                    _ => "贴图窗口内按键",
-                },
-                FontWeight = FontWeights.Bold,
-                FontSize = 13,
-                Margin = new Thickness(0, 12, 0, 6),
-            });
+            rows.Add(BuildScopeHeader(scope, actions.Count));
 
             foreach (var action in actions)
             {
-                panel.Children.Add(BuildHotkeyRow(action, scope));
+                rows.Add(BuildHotkeyRow(action, scope));
             }
         }
 
-        return CreateTab("快捷键", panel);
+        var header = BuildSectionHeader("快捷键", $"{HotkeyCatalog.All.Count} 条 · 点键位即可录制，Esc 取消");
+        ContentHost.Children.Add(header);
+        ContentHost.Children.Add(NoteBanner(
+            "全局热键会与整个系统抢键（L1 试注册判定）；遮罩 / 贴图窗口内的按键只在本程序的窗口里生效，不会与别的软件冲突。",
+            "info",
+            BrushOf("Focal.OnDarkMutedBrush")));
+        ContentHost.Children.Add(GroupCard(rows));
+
+        AddRailItem("快捷键", "keyboard", HotkeyCatalog.All.Count.ToString(CultureInfo.InvariantCulture), header);
+    }
+
+    private static FrameworkElement BuildScopeHeader(HotkeyScope scope, int count)
+    {
+        (string title, string hint) = scope switch
+        {
+            HotkeyScope.Global => ("全局热键", "注册到系统，与整个系统抢键；L1 试注册能判定是否已被占用"),
+            HotkeyScope.Overlay => ("遮罩内按键", "只在截图遮罩显示时生效，不会与别的软件冲突"),
+            HotkeyScope.Pin => ("贴图窗口内按键", "焦点在贴图窗口时生效"),
+            _ => ("标注编辑器内按键", "焦点在标注编辑器时生效"),
+        };
+
+        var line = new StackPanel { Orientation = Orientation.Horizontal };
+        line.Children.Add(new TextBlock
+        {
+            Text = title,
+            Style = StyleOf("Focal.MicroText"),
+            Foreground = BrushOf("Focal.OnDarkMutedBrush"),
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+
+        line.Children.Add(new TextBlock
+        {
+            Text = $"　{hint} · {count} 条",
+            Style = StyleOf("Focal.CaptionText"),
+            Foreground = BrushOf("Focal.OnDarkFaintBrush"),
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+
+        return new Border
+        {
+            Padding = new Thickness(18, 10, 18, 8),
+            BorderBrush = BrushOf("Focal.HairlineDarkBrush"),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Child = line,
+        };
     }
 
     private FrameworkElement BuildHotkeyRow(HotkeyActionDefinition action, HotkeyScope scope)
     {
-        var grid = new Grid { Margin = new Thickness(0, 5, 0, 5) };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(300) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(130) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        // 键位文本走等宽（Focal.KeycapButton 的模板字体就是 Focal.DataFont，这里再显式一次，
+        // 免得隐式 TextBlock 样式把它拉回正文字体）
+        var keyText = InheritDataText("(未绑定)", FocalPalette.DataSize);
 
-        var labels = new StackPanel();
-        labels.Children.Add(new TextBlock { Text = action.DisplayName, FontWeight = FontWeights.SemiBold });
-
-        if (!string.IsNullOrWhiteSpace(action.Description))
+        var keycap = new ToggleButton
         {
-            labels.Children.Add(new TextBlock
-            {
-                Text = action.Description,
-                Foreground = new SolidColorBrush(Color.FromRgb(0x9A, 0x9A, 0x9A)),
-                FontSize = 11,
-                Margin = new Thickness(0, 2, 12, 0),
-            });
-        }
+            Style = StyleOf("Focal.KeycapButton"),
+            Content = keyText,
+            ToolTip = "点击后按组合键录制；Esc 取消。再点一次可取消录制。",
+        };
 
-        Grid.SetColumn(labels, 0);
-        grid.Children.Add(labels);
+        keycap.Click += (_, _) => ToggleRecording(action.Id);
+        AutomationProperties.SetName(keycap, action.DisplayName + " 键位");
 
-        var keysText = new TextBlock
+        var status = new TextBlock
         {
-            Text = "(未绑定)",
+            Style = StyleOf("Focal.DataCaptionText"),
             VerticalAlignment = VerticalAlignment.Center,
-            FontFamily = new FontFamily("Consolas, Microsoft YaHei UI"),
+            Margin = new Thickness(MetricOf("Focal.SpaceSm"), 0, MetricOf("Focal.SpaceSm"), 0),
         };
 
-        Grid.SetColumn(keysText, 1);
-        grid.Children.Add(keysText);
+        var clear = SideButton("清除", "清掉这个动作的绑定（不影响其它动作）", () => SetHotkey(action.Id, null));
+        var reset = SideButton("默认", $"恢复默认键位（{action.DefaultKeys ?? "默认不绑定"}）", () => SetHotkey(action.Id, action.DefaultKeys, forceDefault: true));
 
-        var statusText = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Text = string.Empty };
-        var detailText = new TextBlock
+        var controls = new StackPanel { Orientation = Orientation.Horizontal };
+        controls.Children.Add(keycap);
+        controls.Children.Add(status);
+        controls.Children.Add(clear);
+        controls.Children.Add(reset);
+
+        var detail = new TextBlock
         {
-            Foreground = new SolidColorBrush(Color.FromRgb(0x9A, 0x9A, 0x9A)),
-            FontSize = 11,
-            Margin = new Thickness(0, 2, 0, 0),
+            Style = StyleOf("Focal.CaptionText"),
+            Foreground = BrushOf("Focal.OnDarkFaintBrush"),
+            Visibility = Visibility.Collapsed,
+            Margin = new Thickness(0, MetricOf("Focal.SpaceXs"), 0, 0),
         };
 
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Top };
-        var record = new Button { Content = "录制" };
-        record.Click += (_, _) => StartRecording(action.Id);
-
-        var clear = new Button { Content = "清除" };
-        clear.Click += (_, _) => SetHotkey(action.Id, null);
-
-        var reset = new Button { Content = "默认" };
-        reset.Click += (_, _) => SetHotkey(action.Id, action.DefaultKeys, forceDefault: true);
-
-        buttons.Children.Add(record);
-        buttons.Children.Add(clear);
-        buttons.Children.Add(reset);
-        buttons.Children.Add(statusText);
-
-        var right = new StackPanel();
-        right.Children.Add(buttons);
-        right.Children.Add(detailText);
-
-        Grid.SetColumn(right, 2);
-        grid.Children.Add(right);
+        var row = BuildRow(action.DisplayName, action.Description, controls, out _, out StackPanel main);
+        main.Children.Add(detail);
 
         _hotkeyRows.Add(new HotkeyRow
         {
             Definition = action,
-            KeysText = keysText,
-            StatusText = statusText,
-            DetailText = detailText,
+            Scope = scope,
+            Keycap = keycap,
+            KeyText = keyText,
+            StatusText = status,
+            DetailText = detail,
         });
 
-        return grid;
+        return row;
+    }
+
+    private Button SideButton(string text, string tip, Action onClick)
+    {
+        var button = new Button
+        {
+            Style = StyleOf("Focal.Button.Small"),
+            Content = InheritText(text, FocalPalette.CaptionSize, 0),
+            ToolTip = tip,
+            Margin = new Thickness(MetricOf("Focal.SpaceSm"), 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        button.Click += (_, _) => onClick();
+        AutomationProperties.SetName(button, text);
+        return button;
+    }
+
+    private void ToggleRecording(string actionId)
+    {
+        if (string.Equals(_recordingActionId, actionId, StringComparison.Ordinal))
+        {
+            _recordingActionId = null;
+            RefreshHotkeyStatuses(probe: false);
+            return;
+        }
+
+        StartRecording(actionId);
     }
 
     private void StartRecording(string actionId)
@@ -601,8 +1216,9 @@ internal partial class SettingsWindow : Window
         var row = _hotkeyRows.FirstOrDefault(r => r.Definition.Id == actionId);
         if (row is not null)
         {
-            row.KeysText.Text = "请按组合键…（Esc 取消）";
-            row.DetailText.Text = "修饰键可组合（Ctrl/Shift/Alt/Win）；单独按修饰键不算，需要再按一个普通键。";
+            row.DetailText.Text = "修饰键可组合（Ctrl / Shift / Alt / Win）；单独按修饰键不算，需要再按一个普通键；Esc 取消。";
+            row.DetailText.Foreground = BrushOf("Focal.AccentBrush");
+            row.DetailText.Visibility = Visibility.Visible;
         }
     }
 
@@ -635,12 +1251,6 @@ internal partial class SettingsWindow : Window
 
         if (keys is null)
         {
-            var row = _hotkeyRows.FirstOrDefault(r => r.Definition.Id == actionId);
-            if (row is not null)
-            {
-                row.KeysText.Text = "(未绑定)";
-            }
-
             MessageBox.Show(this, "这个按键暂时无法作为热键（例如 Win 键组合由系统独占、或该键不在支持列表里），请换一个组合。", "WhSnap 设置", MessageBoxButton.OK, MessageBoxImage.Warning);
             RefreshHotkeyStatuses(probe: false);
             return;
@@ -698,6 +1308,9 @@ internal partial class SettingsWindow : Window
         var definition = HotkeyCatalog.Require(actionId);
         string? previous = Settings.Hotkeys.TryGetValue(actionId, out string? existing) ? existing : null;
 
+        _recordingActionId = null;
+        _hotkeyBannerDismissed = false;
+
         if (forceDefault)
         {
             Settings.Hotkeys.Remove(actionId);
@@ -729,7 +1342,7 @@ internal partial class SettingsWindow : Window
                     Settings.DisabledHotkeys.Add(actionId);
                 }
 
-                BannerText.Text = $"「{definition.DisplayName}」与其它动作冲突，已按设置保存但停用。";
+                ShowStatus("热键冲突，已按设置保存但停用", $"「{definition.DisplayName}」的 {keys} 与其它动作冲突：{conflicts[0].Message}");
             }
             else
             {
@@ -762,7 +1375,6 @@ internal partial class SettingsWindow : Window
         ScheduleSave();
         ApplyHotkeyBindings();
         RefreshHotkeyStatuses(probe: true);
-        UpdateBanner();
     }
 
     private void ApplyHotkeyBindings()
@@ -792,61 +1404,170 @@ internal partial class SettingsWindow : Window
         foreach (var row in _hotkeyRows)
         {
             var binding = bindings.First(b => b.ActionId == row.Definition.Id);
-            row.KeysText.Text = binding.IsBound ? binding.Keys! : "(未绑定)";
+            bool recording = string.Equals(_recordingActionId, row.Definition.Id, StringComparison.Ordinal);
 
             var rowConflicts = conflicts.Where(report => report.ActionId == row.Definition.Id).ToList();
             var probeResult = _probeResults.FirstOrDefault(result => result.ActionId == row.Definition.Id);
 
             string status;
-            Brush color;
+            Brush tone;
 
             if (!binding.Enabled)
             {
                 status = "已停用";
-                color = Brushes.Gray;
+                tone = FocalPalette.OnDarkFaint;
             }
             else if (!binding.IsBound)
             {
                 status = "未绑定";
-                color = Brushes.Gray;
+                tone = FocalPalette.OnDarkFaint;
             }
             else if (!binding.IsActive)
             {
                 status = "键位非法";
-                color = Brushes.OrangeRed;
+                tone = FocalPalette.SignalDanger;
             }
             else if (rowConflicts.Any(report => report.Blocks) || probeResult?.Status == HotkeyStatus.ConflictWithSystem)
             {
                 status = "冲突";
-                color = Brushes.OrangeRed;
+                tone = FocalPalette.SignalDanger;
             }
             else if (probeResult?.Status == HotkeyStatus.Registered)
             {
                 status = "空闲";
-                color = Brushes.LightGreen;
+                tone = FocalPalette.SignalOk;
             }
             else
             {
                 status = "已生效";
-                color = Brushes.LightGreen;
+                tone = FocalPalette.SignalOk;
             }
 
-            row.StatusText.Text = $"　[{status}]";
-            row.StatusText.Foreground = color;
+            // 录制中 = IsChecked 的琥珀脉冲态；冲突 / 非法 = Tag="conflict" 的红色态
+            row.Keycap.IsChecked = recording;
+            row.KeyText.Text = recording
+                ? "按组合键…"
+                : binding.IsBound ? binding.Keys! : "(未绑定)";
+            row.Keycap.Tag = status is "冲突" or "键位非法" ? "conflict" : null;
 
-            var details = new List<string>();
+            row.StatusText.Text = $"[{status}]";
+            row.StatusText.Foreground = recording ? FocalPalette.Accent : tone;
 
-            if (binding.Definition.Scope == HotkeyScope.Global && probeResult is not null)
+            if (!recording)
             {
-                details.Add(probeResult.Message);
+                var details = new List<string>();
+
+                if (binding.Definition.Scope == HotkeyScope.Global && probeResult is not null)
+                {
+                    details.Add(probeResult.Message);
+                }
+
+                details.AddRange(rowConflicts.Select(report => report.Message + (report.Advice is null ? string.Empty : $" → {report.Advice}")));
+
+                row.DetailText.Text = string.Join("\n", details);
+                row.DetailText.Foreground = status is "冲突" or "键位非法"
+                    ? FocalPalette.SignalDanger
+                    : FocalPalette.OnDarkFaint;
+                row.DetailText.Visibility = details.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             }
-
-            details.AddRange(rowConflicts.Select(report => report.Message + (report.Advice is null ? string.Empty : $" → {report.Advice}")));
-
-            row.DetailText.Text = string.Join("\n", details);
         }
 
         UpdateBanner(conflicts);
+    }
+
+    // ---------------------------------------------------------------- 状态面（横幅 / 状态条）
+
+    private Border NoteBanner(string text, string icon, Brush iconBrush)
+    {
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        var glyph = Glyph(icon, FocalPalette.IconMd, iconBrush);
+        glyph.VerticalAlignment = VerticalAlignment.Top;
+        glyph.Margin = new Thickness(0, 1, MetricOf("Focal.SpaceSm"), 0);
+
+        var body = new TextBlock
+        {
+            Text = text,
+            Style = StyleOf("Focal.CaptionText"),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        Grid.SetColumn(glyph, 0);
+        Grid.SetColumn(body, 1);
+        grid.Children.Add(glyph);
+        grid.Children.Add(body);
+
+        return new Border
+        {
+            Style = StyleOf("Focal.Banner"),
+            Margin = new Thickness(0, 0, 0, MetricOf("Focal.SpaceMd")),
+            Child = grid,
+        };
+    }
+
+    /// <summary>状态横幅：配置载入状态与操作结果（语义色只出现在状态面）。</summary>
+    private void ShowStatus(string title, string message, bool danger = false)
+    {
+        StatusBanner.Style = StyleOf(danger ? "Focal.BannerDanger" : "Focal.BannerOk");
+        StatusBannerIcon.Icon = IconName(danger ? "warning" : "check");
+        StatusBannerIcon.Foreground = danger ? FocalPalette.SignalDanger : FocalPalette.SignalOk;
+        StatusBannerTitle.Text = title;
+        BannerText.Text = message;
+        StatusBanner.Visibility = Visibility.Visible;
+    }
+
+    private void UpdateConfigBanner()
+    {
+        if (!string.IsNullOrWhiteSpace(_settings.LastError))
+        {
+            ShowStatus("配置载入失败，已改用默认值", $"{_settings.LastError}　（{SettingsService.ConfigFilePath}）", danger: true);
+            return;
+        }
+
+        ShowStatus(
+            "配置已载入",
+            $"{SettingsSchema.All.Count} 项设置 · schema v{AppSettings.CurrentSchemaVersion} · 热键 {HotkeyCatalog.All.Count} 条 · 所有改动即时生效并写入");
+    }
+
+    private void ShowError(string message, string? sourceKey = null)
+    {
+        _errorSourceKey = sourceKey;
+        ErrorBannerText.Text = message;
+        ErrorBanner.Visibility = Visibility.Visible;
+    }
+
+    private void ClearError(string? sourceKey)
+    {
+        if (sourceKey is not null && !string.Equals(_errorSourceKey, sourceKey, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        _errorSourceKey = null;
+        ErrorBanner.Visibility = Visibility.Collapsed;
+    }
+
+    private void DismissError_Click(object sender, RoutedEventArgs e) => ClearError(null);
+
+    private void DismissHotkeyBanner_Click(object sender, RoutedEventArgs e)
+    {
+        _hotkeyBannerDismissed = true;
+        HotkeyBanner.Visibility = Visibility.Collapsed;
+    }
+
+    private void FixConflict_Click(object sender, RoutedEventArgs e)
+    {
+        if (FindSection("快捷键") is { } section)
+        {
+            SelectSection(section.Target, section.Item);
+        }
+
+        if (_conflictFocusActionId is not null)
+        {
+            StartRecording(_conflictFocusActionId);
+        }
     }
 
     private void UpdateBanner(IReadOnlyList<HotkeyConflictReport>? conflicts = null)
@@ -854,144 +1575,236 @@ internal partial class SettingsWindow : Window
         var bindings = _settings.ResolveHotkeys();
         conflicts ??= HotkeyConflictDetector.DetectAll(bindings);
 
-        int blocking = conflicts.Count(report => report.Blocks);
-        int l1 = _probeResults.Count(result => result.Status == HotkeyStatus.ConflictWithSystem);
+        var blocking = conflicts.Where(report => report.Blocks).ToList();
+        var systemConflicts = _probeResults.Where(result => result.Status == HotkeyStatus.ConflictWithSystem).ToList();
         int active = bindings.Count(binding => binding.IsActive && binding.Definition.Scope == HotkeyScope.Global);
+        bool trouble = blocking.Count > 0 || systemConflicts.Count > 0;
 
-        var parts = new List<string>
-        {
-            $"全局热键 {active} 个",
-            $"冲突检测：{HotkeyConflictDetector.Summarize(conflicts)}",
-        };
+        // 热键冲突横幅：只说结论与来源，动作（换键位 / 忽略）就在横幅上
+        bool show = trouble && !_hotkeyBannerDismissed;
+        HotkeyBanner.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
 
-        if (_probeResults.Count > 0)
+        if (show)
         {
-            parts.Add(l1 == 0 ? "L1 试注册：全部可用" : $"L1 试注册：{l1} 个已被占用");
+            _conflictFocusActionId = blocking.Count > 0
+                ? blocking[0].ActionId
+                : systemConflicts[0].ActionId;
+
+            string actionName = _hotkeyRows
+                .FirstOrDefault(row => row.Definition.Id == _conflictFocusActionId)?.Definition.DisplayName
+                ?? _conflictFocusActionId
+                ?? "这个动作";
+
+            HotkeyBannerTitle.Text = blocking.Count > 0
+                ? $"「{actionName}」与其它动作冲突" + (Settings.DisabledHotkeys.Count > 0 ? "，冲突的动作已停用" : string.Empty)
+                : $"「{actionName}」的热键已被系统里的其它程序占用";
+
+            HotkeyBannerText.Text = blocking.Count > 0
+                ? blocking[0].Message + (blocking[0].Advice is null ? string.Empty : $" → {blocking[0].Advice}")
+                : systemConflicts[0].Message + "　（L1 试注册判定；换成别的组合即可，已绑定的键位不会被静默丢弃）";
         }
 
-        parts.Add($"配置：{SettingsService.ConfigFilePath}");
+        // 状态条：结论 + 配置路径（数字 / 路径走等宽）。冲突细节在键位行与横幅上，这里只说个数，
+        // 免得把右侧的配置文件路径挤掉。
+        var parts = new List<string>
+        {
+            _pendingSave ? "正在写入配置…" : "配置已保存",
+            $"{SettingsSchema.All.Count} 项 · schema v{AppSettings.CurrentSchemaVersion}",
+            $"全局热键 {active} 个",
+        };
 
-        BannerText.Text = string.Join("　|　", parts);
-        BannerBorder.BorderBrush = blocking > 0 || l1 > 0
-            ? new SolidColorBrush(Color.FromRgb(0xE0, 0x6C, 0x5A))
-            : new SolidColorBrush(Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF));
+        if (trouble)
+        {
+            parts.Add(blocking.Count > 0 ? $"动作冲突 {blocking.Count} 个" : $"系统占用 {systemConflicts.Count} 个");
+        }
+        else if (_probeResults.Count > 0)
+        {
+            parts.Add("L1 试注册：全部可用");
+        }
+
+        StatusText.Text = string.Join("　|　", parts);
+        StatusPath.Text = SettingsService.ConfigFilePath;
+        StatusDot.Fill = trouble ? FocalPalette.SignalWarn : FocalPalette.SignalOk;
     }
 
-    // ---------------------------------------------------------------- 维护页
+    // ---------------------------------------------------------------- 写入 / 落盘
 
-    private TabItem BuildMaintenanceTab()
+    private void Apply(string key, string? value, FrameworkElement source)
     {
-        var panel = new StackPanel { Margin = new Thickness(4) };
-
-        var diagnostics = new TextBlock
+        if (_building)
         {
-            Text = DiagnosticsProvider?.Invoke() ?? "(诊断信息不可用)",
-            FontFamily = new FontFamily("Consolas, Microsoft YaHei UI"),
-            Margin = new Thickness(0, 0, 0, 12),
-        };
+            return;
+        }
 
-        panel.Children.Add(new TextBlock { Text = "运行状态", FontWeight = FontWeights.Bold, FontSize = 13, Margin = new Thickness(0, 0, 0, 6) });
-        panel.Children.Add(diagnostics);
+        var definition = SettingsSchema.Find(key);
 
-        panel.Children.Add(new TextBlock { Text = "更新", FontWeight = FontWeights.Bold, FontSize = 13, Margin = new Thickness(0, 12, 0, 6) });
+        if (!SettingsBinder.Write(Settings, key, value, out string error))
+        {
+            if (_errorLabels.TryGetValue(key, out var label))
+            {
+                label.Text = error;
+                label.Visibility = Visibility.Visible;
+            }
 
+            ShowError(error, key);
+            return;
+        }
+
+        if (_errorLabels.TryGetValue(key, out var existing))
+        {
+            existing.Text = string.Empty;
+            existing.Visibility = Visibility.Collapsed;
+        }
+
+        ClearError(key);
+        ScheduleSave();
+
+        // 系统集成与剪贴板监听需要宿主立刻反应
+        SettingsChanged?.Invoke();
+    }
+
+    private void ScheduleSave()
+    {
+        _pendingSave = true;
+        _saveTimer.Stop();
+        _saveTimer.Start();
+        UpdateBanner();
+    }
+
+    /// <summary>立刻落盘（关闭设置窗口、改热键、导入后调用）。</summary>
+    public void SaveNow()
+    {
+        _saveTimer.Stop();
+        _pendingSave = false;
+        _settings.Save();
+    }
+
+    // ---------------------------------------------------------------- 维护分组
+
+    private void AddMaintenanceSection()
+    {
+        var rows = new List<FrameworkElement>();
+
+        // 版本：当前版本 + 通道 + 清单来源（本地路径 / https 一眼可辨）
         _versionText = new TextBlock
         {
+            Style = StyleOf("Focal.DataText"),
+            Foreground = BrushOf("Focal.OnDarkMutedBrush"),
+            TextWrapping = TextWrapping.Wrap,
             Text = VersionSummary(),
-            FontFamily = new FontFamily("Consolas, Microsoft YaHei UI"),
+            Margin = new Thickness(0, MetricOf("Focal.SpaceXs"), 0, 0),
         };
 
-        panel.Children.Add(_versionText);
+        var versionRow = BuildRow("当前版本", "程序集版本、更新通道与清单来源（本地路径 / https）", null, out _, out StackPanel versionMain);
+        versionMain.Children.Add(_versionText);
+        rows.Add(versionRow);
 
-        var updateButtons = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
+        // 更新：检查 / 下载安装 + 结论
+        _checkUpdatesButton = SideButton("检查更新", "读取 update.json 并给出结论；不会自动下载", () => _ = RunUpdateCheckAsync());
+        _installUpdateButton = SideButton("下载并安装", "下载 → 校验 SHA-256 → 提示安装（per-user，不需要管理员）", () => _ = RunUpdateInstallAsync());
+        _installUpdateButton.IsEnabled = false;
 
-        _checkUpdatesButton = new Button { Content = "检查更新", Margin = new Thickness(0, 0, 6, 6) };
-        _checkUpdatesButton.Click += async (_, _) => await RunUpdateCheckAsync();
-
-        _installUpdateButton = new Button { Content = "下载并安装", Margin = new Thickness(0, 0, 6, 6), IsEnabled = false };
-        _installUpdateButton.Click += async (_, _) => await RunUpdateInstallAsync();
-
+        var updateButtons = new StackPanel { Orientation = Orientation.Horizontal };
         updateButtons.Children.Add(_checkUpdatesButton);
         updateButtons.Children.Add(_installUpdateButton);
-        panel.Children.Add(updateButtons);
+
+        var updateRow = BuildRow(
+            "检查更新",
+            "只读一份很小的 update.json（版本 / 下载地址 / SHA-256），不上报任何本机信息；下载后先校验再问你要不要装。",
+            updateButtons,
+            out _,
+            out StackPanel updateMain);
 
         _updateStatusText = new TextBlock
         {
             Text = "尚未检查更新。",
-            Foreground = new SolidColorBrush(Color.FromRgb(0x9A, 0x9A, 0x9A)),
-            Margin = new Thickness(0, 4, 0, 0),
+            Style = StyleOf("Focal.CaptionText"),
+            Foreground = BrushOf("Focal.OnDarkFaintBrush"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, MetricOf("Focal.SpaceXs"), 0, 0),
         };
 
-        panel.Children.Add(_updateStatusText);
+        updateMain.Children.Add(_updateStatusText);
+        rows.Add(updateRow);
 
-        panel.Children.Add(new TextBlock
+        // 诊断：运行状态 + 诊断包
+        var diagnostics = new TextBlock
         {
-            Text = "检查更新只读取一份很小的 update.json（版本 / 下载地址 / SHA-256），不上报任何本机信息；"
-                   + "下载后先校验 SHA-256，对不上就删除并拒绝安装。安装会先退出 WhSnap，再静默运行安装包"
-                   + "（per-user 安装，不需要管理员权限）。",
-            Foreground = new SolidColorBrush(Color.FromRgb(0x9A, 0x9A, 0x9A)),
-            FontSize = 11,
-            Margin = new Thickness(0, 8, 0, 0),
-        });
+            Text = DiagnosticsProvider?.Invoke() ?? "(诊断信息不可用)",
+            Style = StyleOf("Focal.DataText"),
+            Foreground = BrushOf("Focal.OnDarkMutedBrush"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, MetricOf("Focal.SpaceXs"), 0, 0),
+        };
 
-        panel.Children.Add(new TextBlock { Text = "维护", FontWeight = FontWeights.Bold, FontSize = 13, Margin = new Thickness(0, 12, 0, 6) });
+        var stateRow = BuildRow("运行状态", "当前采集后端、虚拟桌面、贴图数量等（只读，随打开时刷新）", null, out _, out StackPanel stateMain);
+        stateMain.Children.Add(diagnostics);
+        rows.Add(stateRow);
 
-        var buttons = new WrapPanel();
-        buttons.Children.Add(MakeButton("打开配置目录", () => OpenPath(SettingsService.ConfigDirectory)));
-        buttons.Children.Add(MakeButton("打开保存目录", () => OpenPath(SaveService.ResolveDirectory(Settings))));
-        buttons.Children.Add(MakeButton("复制当前配置到剪贴板", () =>
-        {
-            try
-            {
-                System.Windows.Clipboard.SetText(_settings.ExportJson());
-                BannerText.Text = "当前配置已复制到剪贴板。";
-            }
-            catch (Exception ex)
-            {
-                BannerText.Text = $"复制配置失败：{ex.Message}";
-            }
-        }));
-        buttons.Children.Add(MakeButton("清理贴图备份", () =>
-        {
-            ClearPinBackups?.Invoke();
-            BannerText.Text = "已清理贴图备份目录。";
-        }));
-        buttons.Children.Add(MakeButton("打开日志目录", () => OpenPath(Log.LogDirectory)));
+        _exportDiagnosticsButton = SideButton("导出诊断包…", "日志 + 配置 + 显示器拓扑 + 热键表 + 崩溃证据", () => _ = RunExportDiagnosticsAsync());
 
-        _exportDiagnosticsButton = new Button { Content = "导出诊断包…", Margin = new Thickness(0, 0, 6, 6) };
-        _exportDiagnosticsButton.Click += async (_, _) => await RunExportDiagnosticsAsync();
-        buttons.Children.Add(_exportDiagnosticsButton);
-
-        panel.Children.Add(buttons);
+        var diagnosticsRow = BuildRow(
+            "诊断包",
+            "打包日志与配置用于排查问题：用户目录已脱敏，不含剪贴板内容与任何凭据。",
+            _exportDiagnosticsButton,
+            out _,
+            out StackPanel diagnosticsMain);
 
         _diagnosticsStatusText = new TextBlock
         {
-            Text = "诊断包：日志 + 配置 + 显示器拓扑 + 热键表 + 崩溃证据（用户目录已脱敏，不含剪贴板内容与任何凭据）。",
-            Foreground = new SolidColorBrush(Color.FromRgb(0x9A, 0x9A, 0x9A)),
-            FontSize = 11,
-            Margin = new Thickness(0, 4, 0, 0),
+            Text = "导出后可以直接发给维护者；报告里不会出现你的截图内容。",
+            Style = StyleOf("Focal.CaptionText"),
+            Foreground = BrushOf("Focal.OnDarkFaintBrush"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, MetricOf("Focal.SpaceXs"), 0, 0),
         };
 
-        panel.Children.Add(_diagnosticsStatusText);
+        diagnosticsMain.Children.Add(_diagnosticsStatusText);
+        rows.Add(diagnosticsRow);
 
-        panel.Children.Add(new TextBlock
-        {
-            Text = "配置文件是纯 JSON，可以直接编辑后重启程序；导入时未知项与非法值都会被拒绝并报告，不会静默丢弃。",
-            Foreground = new SolidColorBrush(Color.FromRgb(0x9A, 0x9A, 0x9A)),
-            Margin = new Thickness(0, 12, 0, 0),
-        });
+        // 目录与本地操作
+        var actions = new WrapPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        actions.Children.Add(SideButton("打开配置目录", "配置文件所在的目录", () => OpenPath(SettingsService.ConfigDirectory)));
+        actions.Children.Add(SideButton("打开保存目录", "截图默认落盘的位置", () => OpenPath(SaveService.ResolveDirectory(Settings))));
+        actions.Children.Add(SideButton("打开日志目录", "运行日志与崩溃证据", () => OpenPath(Log.LogDirectory)));
+        actions.Children.Add(SideButton("复制当前配置到剪贴板", "把 settings.json 的内容放进剪贴板", () => CopyConfigToClipboard()));
+        actions.Children.Add(SideButton("清理贴图备份", "贴图备份目录里的历史会话", () => ClearPinBackupsNow()));
 
-        return CreateTab("维护", panel);
+        var actionsRow = BuildRow(
+            "配置与目录",
+            "配置文件是纯 JSON，可以直接编辑后重启；导入时未知项与非法值都会被拒绝并报告，不会静默丢弃。",
+            actions,
+            out _,
+            out _);
+
+        rows.Add(actionsRow);
+
+        var header = BuildSectionHeader("维护", "版本 · 更新 · 诊断包 · 配置目录与日志");
+        ContentHost.Children.Add(header);
+        ContentHost.Children.Add(GroupCard(rows));
+        AddRailItem("维护", "speed", null, header);
     }
 
-    private static Button MakeButton(string content, Action action)
+    private void CopyConfigToClipboard()
     {
-        var button = new Button { Content = content, Margin = new Thickness(0, 0, 6, 6) };
-        button.Click += (_, _) => action();
-        return button;
+        try
+        {
+            System.Windows.Clipboard.SetText(_settings.ExportJson());
+            ShowStatus("配置已复制", "当前配置已复制到剪贴板，可以直接粘进工单或聊天窗口。");
+        }
+        catch (Exception ex)
+        {
+            ShowError($"复制配置失败：{ex.Message}");
+        }
     }
 
-    /// <summary>维护页顶部的版本串：版本号 + 通道 + 清单来源（本地路径 / https 一眼可辨）。</summary>
+    private void ClearPinBackupsNow()
+    {
+        ClearPinBackups?.Invoke();
+        ShowStatus("贴图备份已清理", "贴图备份目录里的历史会话已删除。");
+    }
+
+    /// <summary>维护分组顶部的版本串：版本号 + 通道 + 清单来源（本地路径 / https 一眼可辨）。</summary>
     private string VersionSummary()
     {
         string version = Updater?.CurrentVersion ?? UpdateService.GetCurrentVersion();
@@ -1003,7 +1816,7 @@ internal partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// 检查更新并把结论写进维护页。自检直接调用它（与按钮同一条路径），
+    /// 检查更新并把结论写进维护分组。自检直接调用它（与按钮同一条路径），
     /// 因此"按钮 → 检查 → 状态文字"这条链路是被机器验证过的。
     /// </summary>
     internal async Task<string> RunUpdateCheckAsync()
@@ -1051,7 +1864,7 @@ internal partial class SettingsWindow : Window
         }
     }
 
-    /// <summary>维护页「下载并安装」：下载/校验/询问/退出自身都由宿主实现，这里只负责显示状态。</summary>
+    /// <summary>维护分组「下载并安装」：下载/校验/询问/退出自身都由宿主实现，这里只负责显示状态。</summary>
     internal async Task<string> RunUpdateInstallAsync()
     {
         var manifest = _lastUpdateResult is { CanUpdate: true, Manifest: not null } result ? result.Manifest : null;
@@ -1091,13 +1904,7 @@ internal partial class SettingsWindow : Window
         return text;
     }
 
-    /// <summary>维护页是否有「导出诊断包…」入口。</summary>
-    internal bool HasDiagnosticsEntry => _exportDiagnosticsButton is not null;
-
-    /// <summary>维护页的诊断包状态文字（自检断言结论真的写进了界面）。</summary>
-    internal string DiagnosticsStatusText => _diagnosticsStatusText?.Text ?? string.Empty;
-
-    /// <summary>导出诊断包并把结果写进维护页（自检与按钮走同一条路径）。</summary>
+    /// <summary>导出诊断包并把结果写进维护分组（自检与按钮走同一条路径）。</summary>
     internal async Task<string> RunExportDiagnosticsAsync()
     {
         if (ExportDiagnostics is null)
@@ -1161,7 +1968,18 @@ internal partial class SettingsWindow : Window
         }
     }
 
-    // ---------------------------------------------------------------- 底部按钮
+    // ---------------------------------------------------------------- 窗口机壳与底部操作条
+
+    /// <summary>WindowStyle=None：拖标题栏空白处移动窗口（按钮自己吃掉了鼠标左键，不会误拖）。</summary>
+    private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ButtonState == MouseButtonState.Pressed)
+        {
+            DragMove();
+        }
+    }
+
+    private void Minimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
 
     private void ProbeHotkeys_Click(object sender, RoutedEventArgs e)
     {
@@ -1180,7 +1998,7 @@ internal partial class SettingsWindow : Window
             InitialDirectory = SettingsService.ConfigDirectory,
         };
 
-        if (dialog.ShowDialog() != true)
+        if (dialog.ShowDialog(this) != true)
         {
             return;
         }
@@ -1188,11 +2006,11 @@ internal partial class SettingsWindow : Window
         try
         {
             File.WriteAllText(dialog.FileName, _settings.ExportJson(), Encoding.UTF8);
-            BannerText.Text = $"配置已导出：{dialog.FileName}";
+            ShowStatus("配置已导出", dialog.FileName);
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, $"导出失败：{ex.Message}", "WhSnap 设置", MessageBoxButton.OK, MessageBoxImage.Warning);
+            ShowError($"导出失败：{ex.Message}");
         }
     }
 
@@ -1205,7 +2023,7 @@ internal partial class SettingsWindow : Window
             InitialDirectory = SettingsService.ConfigDirectory,
         };
 
-        if (dialog.ShowDialog() != true)
+        if (dialog.ShowDialog(this) != true)
         {
             return;
         }
@@ -1218,7 +2036,7 @@ internal partial class SettingsWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, $"读取失败：{ex.Message}", "WhSnap 设置", MessageBoxButton.OK, MessageBoxImage.Warning);
+            ShowError($"读取失败：{ex.Message}");
             return;
         }
 
@@ -1238,6 +2056,7 @@ internal partial class SettingsWindow : Window
         ApplyHotkeyBindings();
         RefreshHotkeyStatuses(probe: true);
         SettingsChanged?.Invoke();
+        ShowStatus("配置已导入", result.Describe(), danger: result.HasProblems);
 
         MessageBox.Show(
             this,
@@ -1275,7 +2094,7 @@ internal partial class SettingsWindow : Window
         ApplyHotkeyBindings();
         RefreshHotkeyStatuses(probe: true);
         SettingsChanged?.Invoke();
-        BannerText.Text = "已恢复默认设置。";
+        ShowStatus("已恢复默认设置", "全部设置与热键都回到了出厂默认值。");
     }
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();

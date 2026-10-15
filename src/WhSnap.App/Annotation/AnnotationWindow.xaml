@@ -2,6 +2,8 @@
         x:ClassModifier="internal"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:sys="clr-namespace:System;assembly=mscorlib"
+        xmlns:theme="clr-namespace:WhSnap.Theme"
         Title="WhSnap 标注"
         WindowStyle="None"
         ResizeMode="NoResize"
@@ -9,34 +11,388 @@
         Topmost="True"
         WindowStartupLocation="Manual"
         AllowsTransparency="False"
-        Background="#FF101010"
+        Background="{StaticResource Focal.Obsidian900Brush}"
+        Foreground="{StaticResource Focal.OnDarkBrush}"
+        FontFamily="{StaticResource Focal.TextFont}"
+        FontSize="{StaticResource Focal.BodySize}"
+        TextOptions.TextFormattingMode="Ideal"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True">
 
-    <Grid>
+    <!--
+      标注编辑器（design/focal/surfaces/annotate.html 的 WPF 落地）
+      结构：标题栏 → [ 左工具 rail | 画布 stage ] → 样式条 → 动作条。
+      颜色/度量/圆角全部走 Focal 令牌（Theme/FocalTheme.xaml 是唯一来源）；
+      只有两处设计稿里不属令牌层的度量（rail 宽 92、样式条高 56）在这里固定，见下面的 An.* 令牌。
+    -->
+    <Window.Resources>
+
+        <!-- annotate.html：.an-rail width:92px、.an-stylebar height:56px、.f-slider width:96px -->
+        <sys:Double x:Key="An.RailWidth">92</sys:Double>
+        <sys:Double x:Key="An.StyleBarHeight">56</sys:Double>
+        <sys:Double x:Key="An.SliderWidth">96</sys:Double>
+        <sys:Double x:Key="An.ReadoutWidth">42</sys:Double>
+
+        <!-- 画布底纹：底 = Focal.CanvasBrush，透明区用棋盘格（功能性底纹，不是装饰） -->
+        <DrawingBrush x:Key="An.CheckerBrush" TileMode="Tile" Stretch="None"
+                      Viewport="0,0,16,16" ViewportUnits="Absolute">
+            <DrawingBrush.Drawing>
+                <DrawingGroup>
+                    <GeometryDrawing Brush="{StaticResource Focal.CanvasBrush}">
+                        <GeometryDrawing.Geometry>
+                            <RectangleGeometry Rect="0,0,16,16"/>
+                        </GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                    <GeometryDrawing Brush="{StaticResource Focal.CheckerBrush}">
+                        <GeometryDrawing.Geometry>
+                            <GeometryGroup>
+                                <RectangleGeometry Rect="0,0,8,8"/>
+                                <RectangleGeometry Rect="8,8,8,8"/>
+                            </GeometryGroup>
+                        </GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                </DrawingGroup>
+            </DrawingBrush.Drawing>
+        </DrawingBrush>
+
+        <!-- ══════════ 左侧工具轨（annotate.html .an-rail：obsidian-800 底 + 右侧发丝线） ══════════ -->
+        <Style x:Key="An.RailHost" TargetType="Border">
+            <Setter Property="Width" Value="{StaticResource An.RailWidth}"/>
+            <Setter Property="Background" Value="{StaticResource Focal.Obsidian800Brush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Focal.HairlineDarkBrush}"/>
+            <Setter Property="BorderThickness" Value="0,0,1,0"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+        </Style>
+
+        <!-- rail 项 = Focal.RailItem（选中 = accent-tint 底 + 半粗）；设计稿的 rail 更窄更密（caption 12 / 内边距 6），
+             所以在令牌基础上收窄内边距与字号，其余状态（hover / 选中 / 焦点环）仍由组件层给。 -->
+        <Style x:Key="An.RailItem" TargetType="ToggleButton" BasedOn="{StaticResource Focal.RailItem}">
+            <Setter Property="Margin" Value="4,1,4,1"/>
+            <Setter Property="Padding" Value="4,0,4,0"/>
+            <Setter Property="FontSize" Value="{StaticResource Focal.CaptionSize}"/>
+        </Style>
+
+        <!-- 工具名：跟随 rail 项自己的 Foreground（hover / 选中换前景色时自动跟随） -->
+        <Style x:Key="An.RailLabel" TargetType="TextBlock" BasedOn="{StaticResource Focal.CaptionText}">
+            <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}"/>
+            <Setter Property="TextWrapping" Value="NoWrap"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="6,0,0,0"/>
+        </Style>
+
+        <!-- 工具图标：未选中 = 暗底弱色，选中 = 琥珀（图标本身不含颜色，只跟随 Foreground；
+             选中态由代码在 SyncUi 里显式给色，避免依赖模板内的相对绑定） -->
+        <Style x:Key="An.RailIcon" TargetType="theme:FocalIcon">
+            <Setter Property="Size" Value="{StaticResource Focal.IconMd}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="TextElement.Foreground" Value="{StaticResource Focal.OnDarkFaintBrush}"/>
+        </Style>
+
+        <!-- 快捷键字母：等宽 + tabular-nums（Focal.DataText），字号落到 caption 以适配 92px rail -->
+        <Style x:Key="An.RailKey" TargetType="TextBlock" BasedOn="{StaticResource Focal.DataText}">
+            <Setter Property="FontSize" Value="{StaticResource Focal.CaptionSize}"/>
+            <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkFaintBrush}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="4,0,0,0"/>
+        </Style>
+
+        <!-- ══════════ 控件内的文字：跟随控件前景色（隐式 TextBlock 样式会固定颜色，这里必须显式绑定） ══════════ -->
+        <Style x:Key="An.ControlLabel" TargetType="TextBlock" BasedOn="{StaticResource Focal.BodyText}">
+            <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ButtonBase}}"/>
+            <Setter Property="TextWrapping" Value="NoWrap"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+
+        <Style x:Key="An.SegmentLabel" TargetType="TextBlock" BasedOn="{StaticResource An.ControlLabel}">
+            <Setter Property="FontSize" Value="{StaticResource Focal.CaptionSize}"/>
+        </Style>
+
+        <!-- 琥珀填充的主按钮里的键帽：翻成"墨字 + 浅底"，不叠第二块暗色 -->
+        <Style x:Key="An.KbdPrimary" TargetType="Border" BasedOn="{StaticResource Focal.Kbd}">
+            <Setter Property="Background" Value="{StaticResource Focal.AccentInkMutedBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Focal.AccentInkBrush}"/>
+        </Style>
+
+        <Style x:Key="An.KbdTextPrimary" TargetType="TextBlock" BasedOn="{StaticResource Focal.KbdText}">
+            <Setter Property="Foreground" Value="{StaticResource Focal.AccentInkBrush}"/>
+        </Style>
+
+        <!-- ══════════ 样式条 / 动作条 ══════════ -->
+        <Style x:Key="An.StyleBar" TargetType="Border">
+            <Setter Property="Height" Value="{StaticResource An.StyleBarHeight}"/>
+            <Setter Property="Background" Value="{StaticResource Focal.VoidBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Focal.HairlineDarkBrush}"/>
+            <Setter Property="BorderThickness" Value="0,1,0,0"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+        </Style>
+
+        <!-- 一个参数一格：右发丝线 + 左右 16 内边距，标签永不折行 -->
+        <Style x:Key="An.StyleGroup" TargetType="Border">
+            <Setter Property="Padding" Value="16,0,16,0"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Focal.HairlineDarkBrush}"/>
+            <Setter Property="BorderThickness" Value="0,0,1,0"/>
+            <Setter Property="VerticalAlignment" Value="Stretch"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+        </Style>
+
+        <Style x:Key="An.ToolBar" TargetType="Border">
+            <Setter Property="Height" Value="{StaticResource Focal.ToolbarHeight}"/>
+            <Setter Property="Background" Value="{StaticResource Focal.Obsidian800Brush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Focal.HairlineDarkBrush}"/>
+            <Setter Property="BorderThickness" Value="0,1,0,0"/>
+            <Setter Property="Padding" Value="12,0,12,0"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+        </Style>
+
+        <!-- 分段控制容器（.f-seg：凹陷底 + 发丝线 + 6 圆角 + 2 内边距） -->
+        <Style x:Key="An.Segment" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource Focal.VoidBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Focal.HairlineDarkBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="{StaticResource Focal.RadiusControl}"/>
+            <Setter Property="Padding" Value="2"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+        </Style>
+
+        <!-- 滑杆：3px 轨道 / 14px 琥珀握把（组件层），这里只收宽度到设计稿的 96 -->
+        <Style x:Key="An.Slider" TargetType="Slider" BasedOn="{StaticResource Focal.Slider}">
+            <Setter Property="Width" Value="{StaticResource An.SliderWidth}"/>
+            <Setter Property="MinWidth" Value="{StaticResource An.SliderWidth}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="IsSnapToTickEnabled" Value="True"/>
+            <Setter Property="TickFrequency" Value="1"/>
+            <Setter Property="FocusVisualStyle" Value="{StaticResource Focal.FocusVisual}"/>
+        </Style>
+
+        <!-- 数值读数：等宽 + 右对齐（坐标/尺寸/百分比一律走这里） -->
+        <Style x:Key="An.Readout" TargetType="TextBlock" BasedOn="{StaticResource Focal.DataText}">
+            <Setter Property="Width" Value="{StaticResource An.ReadoutWidth}"/>
+            <Setter Property="TextAlignment" Value="Right"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+
+    </Window.Resources>
+
+    <Grid x:Name="Shell">
+        <!-- 行高在构造函数里按令牌给（GridLength 不能直接吃 StaticResource 的 double） -->
         <Grid.RowDefinitions>
-            <RowDefinition x:Name="ImageRow" Height="*" />
-            <RowDefinition x:Name="ToolbarRow" Height="Auto" />
+            <RowDefinition x:Name="TitleRow" Height="Auto"/>
+            <RowDefinition x:Name="ImageRow" Height="*"/>
+            <RowDefinition x:Name="StyleRow" Height="Auto"/>
+            <RowDefinition x:Name="ToolbarRow" Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- 底图 + 标注：严格 1 物理像素 = 1 像素呈现 -->
-        <Canvas x:Name="CanvasArea" Grid.Row="0" ClipToBounds="True" Background="#FF101010">
-            <Image x:Name="ComposedImage"
-                   Canvas.Left="0"
-                   Canvas.Top="0"
-                   Stretch="None"
-                   RenderOptions.BitmapScalingMode="NearestNeighbor"
-                   RenderOptions.EdgeMode="Aliased" />
-        </Canvas>
+        <!-- ══════════ 标题栏：左手身份，右手状态与窗口按钮 ══════════ -->
+        <Border x:Name="TitleBar" Grid.Row="0" Style="{StaticResource Focal.TitleBar}"
+                MouseLeftButtonDown="OnTitleBarMouseDown">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
 
-        <!-- 工具栏：由代码生成（工具按钮 / 调色板 / 线宽 / 撤销 / 确认） -->
-        <Border Grid.Row="1"
-                x:Name="ToolbarBorder"
-                Background="#FF1B1B1B"
-                BorderBrush="#33FFFFFF"
-                BorderThickness="0,1,0,0"
-                Padding="6,5">
-            <StackPanel x:Name="Toolbar" Orientation="Horizontal" />
+                <theme:FocalIcon Grid.Column="0" Icon="pencil" Size="{StaticResource Focal.IconSm}"
+                                 VerticalAlignment="Center" Margin="0,0,8,0"
+                                 TextElement.Foreground="{StaticResource Focal.AccentBrush}"/>
+                <TextBlock Grid.Column="1" Style="{StaticResource Focal.TitleBarText}" Text="标注"/>
+
+                <Border Grid.Column="3" Style="{StaticResource Focal.Chip}" Margin="0,0,8,0" VerticalAlignment="Center">
+                    <TextBlock x:Name="SizeReadout" Style="{StaticResource Focal.DataCaptionText}"
+                               Foreground="{StaticResource Focal.OnDarkMutedBrush}"/>
+                </Border>
+
+                <Button Grid.Column="4" Style="{StaticResource Focal.WindowButtonClose}"
+                        Click="OnCancelClick" ToolTip="取消（Esc）">
+                    <theme:FocalIcon Icon="x" Size="{StaticResource Focal.IconSm}"/>
+                </Button>
+            </Grid>
+        </Border>
+
+        <!-- ══════════ 主体：左工具 rail + 画布 stage ══════════ -->
+        <Grid x:Name="BodyHost" Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 13 个工具（选择 / 形状 / 手绘 / 效果 / 标注 五组），项与分隔线由代码按同一张表生成 -->
+            <Border Grid.Column="0" Style="{StaticResource An.RailHost}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                              Focusable="False">
+                    <StackPanel x:Name="ToolRailItems" Margin="0,8,0,8"/>
+                </ScrollViewer>
+            </Border>
+
+            <!-- 画布：底图严格 1 物理像素 = 1 像素；周围留白是设计稿的 stage（棋盘格） -->
+            <Grid Grid.Column="1" Background="{StaticResource An.CheckerBrush}" ClipToBounds="True">
+                <Canvas x:Name="CanvasArea" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        ClipToBounds="True" Background="Transparent">
+                    <Image x:Name="ComposedImage" Canvas.Left="0" Canvas.Top="0" Stretch="None"
+                           RenderOptions.BitmapScalingMode="NearestNeighbor"
+                           RenderOptions.EdgeMode="Aliased"/>
+                </Canvas>
+            </Grid>
+        </Grid>
+
+        <!-- ══════════ 样式条：只显示与"当前工具"有关的参数，无关项整格不出现 ══════════ -->
+        <Border x:Name="StyleBar" Grid.Row="2" Style="{StaticResource An.StyleBar}">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                          Focusable="False">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+
+                    <Border x:Name="GroupStroke" Style="{StaticResource An.StyleGroup}">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Style="{StaticResource Focal.MicroText}" Text="描边" VerticalAlignment="Center"/>
+                            <StackPanel x:Name="SwatchHost" Orientation="Horizontal" VerticalAlignment="Center"
+                                        Margin="12,0,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border x:Name="GroupFill" Style="{StaticResource An.StyleGroup}">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Style="{StaticResource Focal.MicroText}" Text="填充" VerticalAlignment="Center"/>
+                            <Border Style="{StaticResource An.Segment}" Margin="12,0,0,0" VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal">
+                                    <ToggleButton x:Name="FillNone" Style="{StaticResource Focal.Segment}"
+                                                  Click="OnFillNoneClick" ToolTip="不填充">
+                                        <TextBlock Style="{StaticResource An.SegmentLabel}" Text="无"/>
+                                    </ToggleButton>
+                                    <ToggleButton x:Name="FillHalf" Style="{StaticResource Focal.Segment}"
+                                                  Click="OnFillHalfClick" ToolTip="半透明填充">
+                                        <TextBlock Style="{StaticResource An.SegmentLabel}" Text="半透明"/>
+                                    </ToggleButton>
+                                    <ToggleButton x:Name="FillSolid" Style="{StaticResource Focal.Segment}"
+                                                  Click="OnFillSolidClick" ToolTip="实心填充">
+                                        <TextBlock Style="{StaticResource An.SegmentLabel}" Text="实心"/>
+                                    </ToggleButton>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
+                    <Border x:Name="GroupWidth" Style="{StaticResource An.StyleGroup}">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Style="{StaticResource Focal.MicroText}" Text="线宽" VerticalAlignment="Center"/>
+                            <Slider x:Name="WidthSlider" Style="{StaticResource An.Slider}" Margin="12,0,0,0"
+                                    Minimum="1" Maximum="20" Value="3"
+                                    AutomationProperties.Name="线宽"
+                                    ValueChanged="OnWidthSliderChanged"/>
+                            <TextBlock x:Name="WidthReadout" Style="{StaticResource An.Readout}" Text="3 px"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border x:Name="GroupOpacity" Style="{StaticResource An.StyleGroup}">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Style="{StaticResource Focal.MicroText}" Text="不透明度" VerticalAlignment="Center"/>
+                            <Slider x:Name="OpacitySlider" Style="{StaticResource An.Slider}" Margin="12,0,0,0"
+                                    Minimum="0" Maximum="100" Value="100"
+                                    AutomationProperties.Name="不透明度"
+                                    ValueChanged="OnOpacitySliderChanged"/>
+                            <TextBlock x:Name="OpacityReadout" Style="{StaticResource An.Readout}" Text="100%"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border x:Name="GroupMosaic" Style="{StaticResource An.StyleGroup}">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Style="{StaticResource Focal.MicroText}" Text="马赛克块" VerticalAlignment="Center"/>
+                            <Slider x:Name="MosaicSlider" Style="{StaticResource An.Slider}" Margin="12,0,0,0"
+                                    Minimum="4" Maximum="40" Value="9"
+                                    AutomationProperties.Name="马赛克块大小"
+                                    ValueChanged="OnMosaicSliderChanged"/>
+                            <TextBlock x:Name="MosaicReadout" Style="{StaticResource An.Readout}" Text="9 px"/>
+                        </StackPanel>
+                    </Border>
+
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <!-- ══════════ 动作条：左手"改坏了怎么办"，右手"结束" ══════════ -->
+        <Border x:Name="ActionBar" Grid.Row="3" Style="{StaticResource An.ToolBar}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="UndoButton" Style="{StaticResource Focal.Button.Quiet}"
+                            Click="OnUndoClick" ToolTip="撤销（Ctrl+Z）" AutomationProperties.Name="撤销">
+                        <StackPanel Orientation="Horizontal">
+                            <theme:FocalIcon Icon="undo" Size="{StaticResource Focal.IconSm}"
+                                             TextElement.Foreground="{StaticResource Focal.OnDarkMutedBrush}"/>
+                            <TextBlock Style="{StaticResource An.ControlLabel}" Text="撤销" Margin="6,0,0,0"/>
+                            <Border Style="{StaticResource Focal.Kbd}" Margin="6,0,0,0">
+                                <TextBlock Style="{StaticResource Focal.KbdText}" Text="Ctrl Z"/>
+                            </Border>
+                        </StackPanel>
+                    </Button>
+
+                    <Button x:Name="RedoButton" Style="{StaticResource Focal.Button.Quiet}"
+                            Click="OnRedoClick" ToolTip="重做（Ctrl+Y）" AutomationProperties.Name="重做">
+                        <StackPanel Orientation="Horizontal">
+                            <theme:FocalIcon Icon="redo" Size="{StaticResource Focal.IconSm}"
+                                             TextElement.Foreground="{StaticResource Focal.OnDarkMutedBrush}"/>
+                            <TextBlock Style="{StaticResource An.ControlLabel}" Text="重做" Margin="6,0,0,0"/>
+                            <Border Style="{StaticResource Focal.Kbd}" Margin="6,0,0,0">
+                                <TextBlock Style="{StaticResource Focal.KbdText}" Text="Ctrl Y"/>
+                            </Border>
+                        </StackPanel>
+                    </Button>
+
+                    <Rectangle Style="{StaticResource Focal.DividerV}"/>
+
+                    <Button x:Name="ClearButton" Style="{StaticResource Focal.Button.Quiet}"
+                            Click="OnClearClick" ToolTip="清空全部标注（可撤销）" AutomationProperties.Name="清空">
+                        <StackPanel Orientation="Horizontal">
+                            <theme:FocalIcon Icon="trash" Size="{StaticResource Focal.IconSm}"
+                                             TextElement.Foreground="{StaticResource Focal.OnDarkMutedBrush}"/>
+                            <TextBlock Style="{StaticResource An.ControlLabel}" Text="清空" Margin="6,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="CopyButton" Style="{StaticResource Focal.Button.Secondary}"
+                            Click="OnCopyClick" ToolTip="确认并只复制到剪贴板" AutomationProperties.Name="复制"
+                            Margin="0,0,8,0">
+                        <StackPanel Orientation="Horizontal">
+                            <theme:FocalIcon Icon="copy" Size="{StaticResource Focal.IconSm}"
+                                             TextElement.Foreground="{StaticResource Focal.OnDarkMutedBrush}"/>
+                            <TextBlock Style="{StaticResource An.ControlLabel}" Text="复制" Margin="6,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button x:Name="CancelButton" Style="{StaticResource Focal.Button.Secondary}"
+                            Click="OnCancelClick" ToolTip="取消标注（Esc）" AutomationProperties.Name="取消">
+                        <StackPanel Orientation="Horizontal">
+                            <theme:FocalIcon Icon="x" Size="{StaticResource Focal.IconSm}"
+                                             TextElement.Foreground="{StaticResource Focal.OnDarkMutedBrush}"/>
+                            <TextBlock Style="{StaticResource An.ControlLabel}" Text="取消" Margin="6,0,0,0"/>
+                            <Border Style="{StaticResource Focal.Kbd}" Margin="6,0,0,0">
+                                <TextBlock Style="{StaticResource Focal.KbdText}" Text="Esc"/>
+                            </Border>
+                        </StackPanel>
+                    </Button>
+
+                    <Button x:Name="ConfirmButton" Style="{StaticResource Focal.Button.Primary}"
+                            Click="OnConfirmClick" ToolTip="确认标注（Enter）" AutomationProperties.Name="完成"
+                            Margin="8,0,0,0">
+                        <StackPanel Orientation="Horizontal">
+                            <theme:FocalIcon Icon="check" Size="{StaticResource Focal.IconSm}"
+                                             TextElement.Foreground="{StaticResource Focal.AccentInkBrush}"/>
+                            <TextBlock Style="{StaticResource An.ControlLabel}" Text="完成" Margin="6,0,0,0"/>
+                            <Border Style="{StaticResource An.KbdPrimary}" Margin="6,0,0,0">
+                                <TextBlock Style="{StaticResource An.KbdTextPrimary}" Text="Enter"/>
+                            </Border>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
         </Border>
     </Grid>
 </Window>

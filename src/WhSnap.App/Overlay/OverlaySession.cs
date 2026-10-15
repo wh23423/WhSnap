@@ -24,6 +24,21 @@ internal enum OverlayConfirmAction
 }
 
 /// <summary>
+/// 遮罩浮动工具条上的三种互斥模式（DESIGN §8 ov-toolbar：模式组 → 动作组 → 结束组）。
+/// </summary>
+internal enum OverlayTool
+{
+    /// <summary>区域框选（拖动决定边界）。</summary>
+    Region,
+
+    /// <summary>元素检测：单击选中光标下的界面元素，Tab 切换候选。</summary>
+    Element,
+
+    /// <summary>取色：单击取走光标下的像素颜色并复制，不结束会话。</summary>
+    Color,
+}
+
+/// <summary>
 /// 一次截图会话：为每台显示器创建一个遮罩窗口，共享同一个**虚拟桌面绝对物理坐标**的选区模型。
 ///
 /// 跨屏拖拽的实现方式：按下鼠标的那个窗口捕获鼠标，之后无论光标移动到哪台显示器，
@@ -90,6 +105,40 @@ internal sealed class OverlaySession
 
     public event Action? Cancelled;
 
+    /// <summary>浮动工具条切换模式（每个遮罩窗口都要跟着更新选中态）。</summary>
+    internal event Action<OverlayTool>? ToolChanged;
+
+    /// <summary>当前工具模式。默认区域框选，保持"打开遮罩即可框选"的老手感。</summary>
+    internal OverlayTool Tool { get; private set; } = OverlayTool.Region;
+
+    /// <summary>切换工具模式（工具条调用）。</summary>
+    internal void SetTool(OverlayTool tool)
+    {
+        if (Tool == tool)
+        {
+            return;
+        }
+
+        Tool = tool;
+        ToolChanged?.Invoke(tool);
+
+        if (tool == OverlayTool.Element)
+        {
+            StatusReported?.Invoke("元素检测：单击选中元素，Tab 在候选之间切换。", false);
+        }
+        else if (tool == OverlayTool.Color)
+        {
+            StatusReported?.Invoke("取色：单击取走该像素颜色并复制（不会结束截图）。", false);
+        }
+    }
+
+    /// <summary>取某个动作当前的键位文本（提示条与键帽显示用：键位可改，不能写死默认值）。</summary>
+    internal string KeyText(string actionId)
+    {
+        var binding = _bindings.FirstOrDefault(b => string.Equals(b.ActionId, actionId, StringComparison.OrdinalIgnoreCase));
+        return binding is { IsActive: true } ? binding.Keys!.Trim() : string.Empty;
+    }
+
     /// <summary>取色模式：单击即取色并结束会话，不产生选区（托盘「取色器」）。</summary>
     public bool ColorPickMode { get; }
 
@@ -148,6 +197,19 @@ internal sealed class OverlaySession
         if (clickCount >= 2)
         {
             Confirm();
+            return;
+        }
+
+        // 工具条上的模式决定这次按下意味着什么
+        if (Tool == OverlayTool.Color)
+        {
+            PickColor(absolute);
+            return;
+        }
+
+        if (Tool == OverlayTool.Element)
+        {
+            SelectElementAt(absolute);
             return;
         }
 
@@ -258,7 +320,7 @@ internal sealed class OverlaySession
 
                 _candidates = candidates;
                 _highlighted = ElementDetection.Choose(candidates, point);
-                RenderElementHighlight(_highlighted?.Bounds);
+                RenderElementHighlight(_highlighted?.Bounds, _highlighted?.Describe());
             });
         }, TaskScheduler.Default);
     }
@@ -282,17 +344,43 @@ internal sealed class OverlaySession
         }
 
         _selection.SetSelection(_highlighted.Bounds);
-        RenderElementHighlight(_highlighted.Bounds);
+        RenderElementHighlight(_highlighted.Bounds, _highlighted.Describe());
         Broadcast();
         StatusReported?.Invoke($"元素：{_highlighted.Describe()}", false);
     }
 
-    private void RenderElementHighlight(PhysicalRect? absolute)
+    private void RenderElementHighlight(PhysicalRect? absolute, string? label = null)
     {
         foreach (var window in _windows)
         {
-            window.RenderElement(absolute);
+            window.RenderElement(absolute, label);
         }
+    }
+
+    /// <summary>元素工具：单击选中光标下的界面元素（同步查询，工具条交互不能等异步结果）。</summary>
+    private void SelectElementAt(PhysicalPoint point)
+    {
+        if (!_settings.ElementDetectionEnabled)
+        {
+            StatusReported?.Invoke("元素检测已在设置里关闭；用「区域」模式手动框选。", true);
+            return;
+        }
+
+        var candidates = ElementLocator.Find(point, _settings.ElementDetectionUseUia);
+        var chosen = ElementDetection.Choose(candidates, point) ?? _highlighted;
+
+        if (chosen is null)
+        {
+            StatusReported?.Invoke("光标下没有检测到界面元素；用「区域」模式手动框选。", true);
+            return;
+        }
+
+        _candidates = candidates;
+        _highlighted = chosen;
+        _selection.SetSelection(chosen.Bounds);
+        RenderElementHighlight(chosen.Bounds, chosen.Describe());
+        Broadcast();
+        StatusReported?.Invoke($"已选中元素：{chosen.Describe()}", false);
     }
 
     private void BroadcastColorHistory()
@@ -426,7 +514,7 @@ internal sealed class OverlaySession
     }
 
     /// <summary>把当前选区交给标注编辑器：裁剪出图元后关闭遮罩，但**不算确认、也不算取消**。</summary>
-    private void RequestAnnotate()
+    internal void RequestAnnotate()
     {
         if (_resolved || !_selection.HasSelection)
         {

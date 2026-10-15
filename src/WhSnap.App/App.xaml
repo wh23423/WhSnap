@@ -2,5 +2,20 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              ShutdownMode="OnExplicitShutdown">
-    <Application.Resources />
+    <!--
+      Focal 设计语言 v1.0（design/focal）落地入口。
+      FocalTheme.xaml  —— 令牌唯一来源（颜色 / 字体 / 度量 / 圆角 / 间距 / 层级）
+      FocalControls.xaml —— 组件层（按钮 / 工具键 / 开关 / 输入 / 列表行 / 导航 / 横幅…）
+      FocalIcons.xaml  —— 自绘图标几何（24 网格 / 1.6 描边 / 只跟随 Foreground）
+      界面 XAML 只允许引用 Focal.* 令牌，C# 只允许走 WhSnap.Theme.FocalPalette。
+    -->
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Theme/FocalTheme.xaml" />
+                <ResourceDictionary Source="Theme/FocalIcons.xaml" />
+                <ResourceDictionary Source="Theme/FocalControls.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
 </Application>

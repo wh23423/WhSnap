@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Focal · 首次运行向导</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../focal.css">
+<style>
+  /* 页面级：只写定位 / 网格。颜色 · 圆角 · 阴影全部来自令牌 */
+  html, body { width: 880px; height: 620px; overflow: hidden; background: var(--linen); }
+  body { padding: 0; }
+
+  .ob-window { width: 880px; height: 620px; }
+
+  .ob-hero { padding: var(--sp-3xl) var(--sp-3xl) var(--sp-lg); gap: var(--sp-sm); }
+  /* 副标题断行是设计的一部分：自己断，交给浏览器居中折行会得到长短不齐的 4 行 */
+  .ob-hero__sub { max-width: none; text-align: center; margin-top: var(--sp-xs); }
+  .ob-hero__sub span { display: block; }
+  .ob-steps { margin-top: var(--sp-xl); }
+
+  /* 主体：内容块贴着页脚，留白落在标题与列表之间 */
+  .ob-body {
+    flex: 1; min-height: 0;
+    display: flex; flex-direction: column; justify-content: flex-start;
+    padding: 0 var(--sp-3xl) var(--sp-2xl);
+    gap: var(--sp-md);
+  }
+  /* 三行热键保持自然高度；主体多出的留白由页脚上方的内边距吸收 */
+  .ob-hklist { display: flex; flex-direction: column; gap: var(--sp-md); }
+
+  .ob-hkrow { padding: var(--sp-sm) var(--sp-lg); gap: var(--sp-lg); min-height: 0; }
+  .ob-hkrow__icon {
+    width: 32px; height: 32px; flex: none;
+    display: grid; place-items: center;
+    border-radius: var(--r-control);
+    background: var(--obsidian-700);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+  }
+  /* 三行键位按钮必须落在同一条竖线上：文案列定宽，键位列靠右固定 */
+  .ob-hkrow__main { flex: none; width: 520px; display: flex; flex-direction: column; gap: 0; min-width: 0; }
+  /* 录制态：整行换成凹槽表面 + 琥珀描边，避免只有按钮在闪 */
+  .ob-hkrow[data-recording="true"] { background: var(--surface-sunken); border-color: rgba(245,165,36,.45); }
+  .ob-hkrow[data-recording="true"] .ob-hkrow__icon { border-color: rgba(245,165,36,.45); color: var(--accent); }
+  .ob-hkrow__state { display: inline-flex; align-items: center; gap: var(--sp-xs); color: var(--accent); }
+
+  .ob-switchrow {
+    min-height: var(--h-row);
+    padding: var(--sp-md) var(--sp-lg);
+    border-bottom: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--r-card);
+    background: var(--surface-raised);
+  }
+  .ob-switchrow .f-row__main { justify-content: center; }
+
+  .ob-foot {
+    flex: none;
+    display: flex; align-items: center; gap: var(--sp-md);
+    padding: var(--sp-md) var(--sp-3xl) var(--sp-xl);
+    border-top: 1px solid var(--border-soft);
+  }
+  .ob-foot__spacer { flex: 1; }
+  .ob-foot__note { display: inline-flex; align-items: center; gap: var(--sp-xs); }
+</style>
+</head>
+<body data-theme="obsidian">
+
+<div class="f-window ob-window">
+
+  <div class="f-titlebar">
+    <svg class="f-i f-i--sm" style="color:var(--accent)"><use href="#i-brand"/></svg>
+    <span class="f-titlebar__title">WhSnap</span>
+    <span class="f-titlebar__spacer"></span>
+    <span class="f-data f-faint" style="font-size:var(--fs-caption)">v1.0.0-preview.2</span>
+  </div>
+
+  <div class="ob-hero">
+    <div class="ob-mark"><svg class="f-i f-i--xl"><use href="#i-brand"/></svg></div>
+    <h1 class="f-display">按一下 F1，就能截下屏幕上的任何一块</h1>
+    <p class="f-caption ob-hero__sub">
+      <span>框选要保留的区域 → 用方向键微调边界，需要时加上标注 →</span>
+      <span>复制到剪贴板、存成文件，或者贴成一张随时可见的浮图。</span>
+    </p>
+    <div class="ob-steps">
+      <span class="ob-step" data-on="true"></span>
+      <span class="ob-step"></span>
+      <span class="ob-step"></span>
+    </div>
+  </div>
+
+  <div class="ob-body">
+
+    <div class="ob-hklist">
+
+    <div class="ob-hkrow">
+      <span class="ob-hkrow__icon"><svg class="f-i"><use href="#i-crop"/></svg></span>
+      <div class="ob-hkrow__main">
+        <span class="f-body f-strong">截图</span>
+        <span class="f-caption">全局热键，任何程序前台时都能唤起框选遮罩</span>
+      </div>
+      <button class="f-keycap-btn"><span class="f-data">F1</span></button>
+    </div>
+
+    <div class="ob-hkrow">
+      <span class="ob-hkrow__icon"><svg class="f-i"><use href="#i-clipboard"/></svg></span>
+      <div class="ob-hkrow__main">
+        <span class="f-body f-strong">贴图剪贴板</span>
+        <span class="f-caption">把剪贴板里的图片直接贴成浮图，截完图按一下就够</span>
+      </div>
+      <button class="f-keycap-btn"><span class="f-data">F3</span></button>
+    </div>
+
+    <div class="ob-hkrow" data-recording="true">
+      <span class="ob-hkrow__icon"><svg class="f-i"><use href="#i-gear"/></svg></span>
+      <div class="ob-hkrow__main">
+        <span class="f-body f-strong">打开设置</span>
+        <span class="ob-hkrow__state f-caption">
+          <svg class="f-i f-i--sm"><use href="#i-keyboard"/></svg>正在录制：请按下新的组合键，Esc 取消
+        </span>
+      </div>
+      <button class="f-keycap-btn" data-recording="true"><span class="f-data">Ctrl+Shift+,</span></button>
+    </div>
+
+    </div>
+
+    <div class="f-row ob-switchrow">
+      <div class="f-row__main">
+        <span class="f-row__label f-strong">开机自启动</span>
+        <span class="f-row__hint">登录 Windows 后自动驻留托盘，F1 随时可用。之后可以在托盘菜单里改。</span>
+      </div>
+      <div class="f-row__ctl">
+        <button class="f-switch" role="switch" aria-checked="true" aria-label="开机自启动"></button>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="ob-foot">
+    <button class="f-btn f-btn--quiet"><svg class="f-i"><use href="#i-external"/></svg>打开用户手册</button>
+    <span class="ob-foot__spacer"></span>
+    <span class="ob-foot__note f-caption f-faint">
+      <svg class="f-i f-i--sm"><use href="#i-info"/></svg>首次运行向导 · 第 1 步，共 3 步
+    </span>
+    <button class="f-btn f-btn--quiet">稍后再看</button>
+    <button class="f-btn f-btn--primary">开始使用</button>
+  </div>
+
+</div>
+
+<script src="../icons.js"></script>
+</body>
+</html>

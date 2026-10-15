@@ -1,0 +1,162 @@
+/* ============================================================================
+   WhSnap · Focal Design Language · v1.0
+   tokens.css — 唯一色值/尺寸来源。组件层只允许引用变量，禁止内联字面量。
+   ----------------------------------------------------------------------------
+   设计前提：WhSnap 的界面活在「别人的画面之上」（遮罩浮在任意桌面内容上），
+   所以 Focal 是 dark-first 的仪器语言：暗色承载操作，纸色承载阅读。
+   ========================================================================== */
+
+:root {
+  /* ---------------------------------------------------------------- 表面：Obsidian（暗色机壳）
+     用来承载操作、浮在内容之上。四阶足够，多一阶都是噪声。 */
+  --void:            #08090a;  /* 真空：暗幕底、播放器、照片压暗 */
+  --obsidian-900:    #101114;  /* 窗口底 */
+  --obsidian-800:    #16181c;  /* 面板 / 工具条底 */
+  --obsidian-700:    #1e2126;  /* 抬升块：输入框、卡片、菜单项 hover 底 */
+  --obsidian-600:    #2a2e35;  /* 强 hover / 选中未激活 */
+
+  /* 暗色描边：只能用白色低透明度，纯灰线在暗底上会发脏 */
+  --hairline-dark:        rgba(255, 255, 255, 0.08);
+  --hairline-dark-strong: rgba(255, 255, 255, 0.14);
+  --inner-top-light:      rgba(255, 255, 255, 0.06); /* 1px 顶面高光：暗色块的"机加工倒角" */
+
+  /* ---------------------------------------------------------------- 表面：Paper（纸色阅读面）
+     linen 比纯白暖 2 个色阶（#f4f4f2），长时间阅读不刺眼，也把"仪器"和"办公室软件"区分开 */
+  --paper:           #ffffff;
+  --linen:           #f4f4f2;
+  --linen-deep:      #e9e9e5;
+  --hairline-light:      rgba(20, 22, 26, 0.10);
+  --hairline-light-soft: rgba(20, 22, 26, 0.06);
+
+  /* ---------------------------------------------------------------- 文字 */
+  --ink:            #14161a;  /* 浅底主文字 */
+  --ink-muted:      #5b6169;  /* 浅底次要说明 */
+  --ink-faint:      #8a9098;  /* 浅底占位 / 禁用 */
+  --on-dark:        #f2f3f5;  /* 暗底主文字 */
+  --on-dark-muted:  #a9aeb6;  /* 暗底次要说明 */
+  --on-dark-faint:  #767c85;  /* 暗底占位 / 禁用 */
+
+  /* ---------------------------------------------------------------- 强调：Signal Amber
+     全局唯一的交互色。规则见 DESIGN §2：琥珀只做「填充、描边、焦点环、量测标记」，
+     永不承担小字号正文（在浅底上对比度不足），浅底链接改用墨色 + 琥珀下划线。 */
+  --accent:         #f5a524;
+  --accent-hover:   #ffbb4a;
+  --accent-press:   #d98e15;
+  /* Signal Amber Deep：同一色相的第 4 档。浅底上唯一允许承载小字正文的琥珀（对 Linen 5.4:1）。
+     对应"暗底用亮档、浅底用深档"的同一逻辑 —— 强调色是一族，不是一个值。 */
+  --accent-deep:    #8a5a0a;
+  --accent-ink:     #1a1206;  /* 琥珀填充上的文字/图标（9.1:1） */
+  --accent-tint:    rgba(245, 165, 36, 0.14);  /* 选中行底色 */
+  --accent-tint-2:  rgba(245, 165, 36, 0.24);  /* 选中行底色（hover） */
+  --accent-ring:    rgba(245, 165, 36, 0.55);  /* 焦点环 */
+  --accent-halo:    rgba(245, 165, 36, 0.22);  /* 浮层外发光 */
+  --accent-border:  rgba(245, 165, 36, 0.40);  /* 琥珀边界：选中行 / 警告横幅 / 录制态 */
+  --accent-ink-muted: rgba(26, 18, 6, 0.62);   /* 琥珀底上的次级字：键帽、快捷键列 */
+
+  /* ---------------------------------------------------------------- 语义信号（仅限状态面）
+     只出现在横幅/状态/冲突提示里，不进导航、标题、装饰。warn 与强调同源，不新增色。 */
+  --signal-ok:      #2fb27c;
+  --signal-warn:    #f5a524;
+  --signal-danger:  #e5484d;
+
+  /* ---------------------------------------------------------------- 量测色板
+     遮罩/标注里的固定语义：选区、手柄、中心像素、检测元素。 */
+  --measure-select:  var(--accent);
+  --measure-center:  #ffd34d;
+  --measure-element: #57c7ff;
+
+  /* ---------------------------------------------------------------- 排版
+     显示用 Display 光学尺寸，正文用 Text；数据一律等宽（仪器感 + 数字不跳字）。
+     Windows 11 自带 Segoe UI Variable 与 Cascadia Code，两端都是系统字体，零下载。 */
+  --font-display: "Segoe UI Variable Display", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
+  --font-text:    "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
+  --font-data:    "Cascadia Code", "Cascadia Mono", Consolas, "Microsoft YaHei UI", ui-monospace, monospace;
+
+  /* 字号阶梯：14 为界面基准（桌面密度），11 为下限，28 为窗口标题上限 */
+  --fs-display:  28px;  --lh-display: 1.15;  --ls-display: -0.4px;  --fw-display: 600;
+  --fs-title:    20px;  --lh-title:   1.25;  --ls-title:   -0.3px;  --fw-title:   600;
+  --fs-subtitle: 15px;  --lh-subtitle:1.35;  --ls-subtitle:-0.2px;  --fw-subtitle:600;
+  --fs-body:     14px;  --lh-body:    1.5;   --ls-body:    0;
+  --fs-caption:  12px;  --lh-caption: 1.45;  --ls-caption: 0;
+  --fs-micro:    11px;  --lh-micro:   1.3;   --ls-micro:   0.4px;    --fw-micro: 600;
+  --fs-data:     13px;  --lh-data:    1.2;   --ls-data:    0;        --fw-data: 500;
+  --fs-data-lg:  20px;  --lh-data-lg: 1.1;   --ls-data-lg: -0.4px;   --fw-data-lg: 600;
+  --fs-kbd:      11px;  --ls-kbd:     0.3px;
+
+  /* ---------------------------------------------------------------- 间距（4px 基）
+     结构性布局只走 4 的倍数；奇数留给描边与光学对齐。 */
+  --sp-3xs: 2px;  --sp-2xs: 4px;  --sp-xs:  6px;  --sp-sm:  8px;
+  --sp-md:  12px; --sp-lg:  16px; --sp-xl:  20px; --sp-2xl: 24px;
+  --sp-3xl: 32px; --sp-4xl: 40px; --sp-5xl: 56px; --sp-6xl: 72px;
+
+  /* 控件度量：桌面密度（不是 web 触屏密度） */
+  --h-control:  30px;  /* 标准按钮 / 输入框 */
+  --h-control-lg: 34px;/* 主操作 */
+  --h-row:      32px;  /* 设置行 */
+  --h-row-lg:   40px;  /* 列表行（带副标题） */
+  --h-bar:      40px;  /* 工具条 */
+  --h-titlebar: 32px;
+  --icon-sm: 14px; --icon-md: 16px; --icon-lg: 20px; --icon-xl: 24px;
+
+  /* ---------------------------------------------------------------- 圆角
+     刻意扁平：只有 4 级 + 全圆。pill 只留给状态点与录制指示，绝不用于 CTA。 */
+  --r-hair:    2px;
+  --r-control: 6px;
+  --r-card:    10px;
+  --r-panel:   14px;
+  --r-full:    9999px;
+
+  /* ---------------------------------------------------------------- 层级（Focal 的深度规则）
+     L0 平铺 + 发丝线；L1 只给"浮在不可控内容之上"的机壳；L2 只给对话框。
+     按钮、卡片、列表行、文字永远没有阴影。 */
+  --ring-chrome: inset 0 1px 0 var(--inner-top-light), 0 0 0 1px var(--hairline-dark-strong);
+  --shadow-chrome: 0 1px 2px rgba(0, 0, 0, 0.40), 0 10px 30px rgba(0, 0, 0, 0.55);
+  --shadow-dialog: 0 2px 6px rgba(16, 18, 22, 0.08), 0 18px 48px rgba(16, 18, 22, 0.18);
+
+  /* ---------------------------------------------------------------- 动效
+     仪器不弹跳。按下 = 下沉 1px；出现 = 90ms 透明度；没有 spring。 */
+  --ease: cubic-bezier(0.2, 0.8, 0.3, 1);
+  --dur-instant: 90ms;
+  --dur-fast:   140ms;
+  --dur-base:   220ms;
+
+  /* ---------------------------------------------------------------- 遮罩专用
+     暗幕浓度按物理像素计算，不随主题变化。 */
+  --scrim: rgba(0, 0, 0, 0.45);
+  /* 透明画布的棋盘格：功能性底纹，不是装饰 */
+  --checker: rgba(255, 255, 255, 0.035);
+}
+
+/* 浅色阅读模式：只换表面与文字，强调色与量级不变（一个语言，两种音量） */
+[data-theme="paper"] {
+  --surface-base:   var(--paper);
+  --surface-sunken: var(--linen);
+  --surface-raised: var(--paper);
+  --border:         var(--hairline-light);
+  --border-soft:    var(--hairline-light-soft);
+  --text:           var(--ink);
+  --text-muted:     var(--ink-muted);
+  --text-faint:     var(--ink-faint);
+  --shadow-float:   var(--shadow-dialog);
+  --ring-chrome:    inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 0 0 1px var(--hairline-light);
+  --accent-text:    var(--accent-deep);
+}
+
+[data-theme="obsidian"] {
+  --surface-base:   var(--obsidian-900);
+  --surface-sunken: var(--void);
+  --surface-raised: var(--obsidian-800);
+  --border:         var(--hairline-dark);
+  --border-soft:    var(--hairline-dark);
+  --text:           var(--on-dark);
+  --text-muted:     var(--on-dark-muted);
+  --text-faint:     var(--on-dark-faint);
+  --shadow-float:   var(--shadow-chrome);
+  --ring-chrome:    inset 0 1px 0 var(--inner-top-light), 0 0 0 1px var(--hairline-dark-strong);
+  --accent-text:    var(--accent);
+}
+
+/* 旧版 Edge/WebView 兜底：没有 Segoe UI Variable 时字重阶梯不至于塌掉 */
+@supports not (font-variation-settings: normal) {
+  :root { --fw-display: 600; --fw-title: 600; }
+}

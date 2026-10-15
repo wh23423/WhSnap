@@ -3,6 +3,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using WhSnap.Core;
 using WhSnap.Services;
+using WhSnap.Theme;
 
 namespace WhSnap.Annotation;
 
@@ -157,6 +158,12 @@ internal static class AnnotationRenderer
 /// 图元的矢量绘制（标注窗口的实时预览与最终合成都走这一份代码，
 /// 避免"预览看到的样子"和"导出的样子"不一致）。
 /// 所有坐标都是**图像局部物理像素**。
+///
+/// 这个文件画的是**用户的图与标注**（不是界面主题），所以颜色分两类：
+///   * 用户颜色（描边 / 填充 / 序号底色）来自 <see cref="AnnotationStyle"/>，一律经
+///     <see cref="FocalPalette.FromRgb"/> 落地 —— 渲染代码里同样不写颜色字面量；
+///   * 内容层的辅助色（文字描边晕、序号暗环、序号字色）走 Focal 令牌，
+///     不在渲染代码里埋字面量。
 /// </summary>
 internal static class AnnotationDrawing
 {
@@ -173,8 +180,7 @@ internal static class AnnotationDrawing
         ArgumentNullException.ThrowIfNull(dc);
         ArgumentNullException.ThrowIfNull(item);
 
-        var stroke = new SolidColorBrush(ToColor(item.Style.Stroke));
-        stroke.Freeze();
+        var stroke = FocalPalette.FromRgb(item.Style.Stroke);
 
         double width = Math.Max(item.Style.StrokeWidth, 1);
         var pen = new Pen(stroke, width)
@@ -226,8 +232,7 @@ internal static class AnnotationDrawing
 
             case AnnotationKind.Marker:
             {
-                var markerBrush = new SolidColorBrush(ToColor(item.Style.Stroke)) { Opacity = 0.45 };
-                markerBrush.Freeze();
+                var markerBrush = Translucent(item.Style.Stroke, StrokeOpacity(item, 0.45));
                 var markerPen = new Pen(markerBrush, Math.Max(width * 3, 10))
                 {
                     StartLineCap = PenLineCap.Round,
@@ -241,8 +246,7 @@ internal static class AnnotationDrawing
 
             case AnnotationKind.Highlight:
             {
-                var highlightBrush = new SolidColorBrush(ToColor(item.Style.Stroke)) { Opacity = 0.35 };
-                highlightBrush.Freeze();
+                var highlightBrush = Translucent(item.Style.Stroke, StrokeOpacity(item, 0.35));
                 var highlightPen = new Pen(highlightBrush, Math.Max(width * 5, 16))
                 {
                     StartLineCap = PenLineCap.Flat,
@@ -276,10 +280,21 @@ internal static class AnnotationDrawing
             return null;
         }
 
-        var brush = new SolidColorBrush(ToColor(item.Style.Fill))
+        return Translucent(item.Style.Fill, Math.Clamp(item.Style.FillOpacity / 100.0, 0, 1));
+    }
+
+    /// <summary>笔迹不透明度：样式里的 FillOpacity 就是样式条上的「不透明度」读数（0 = 用工具内置值）。</summary>
+    private static double StrokeOpacity(AnnotationItem item, double fallback) =>
+        item.Style.FillOpacity > 0 ? Math.Clamp(item.Style.FillOpacity / 100.0, 0, 1) : fallback;
+
+    /// <summary>用户颜色 → 半透明画刷（用户颜色本身来自内容，不是界面主题）。</summary>
+    private static SolidColorBrush Translucent(RgbColor color, double opacity)
+    {
+        var brush = new SolidColorBrush(FocalPalette.FromRgb(color).Color)
         {
-            Opacity = Math.Clamp(item.Style.FillOpacity / 100.0, 0, 1),
+            Opacity = Math.Clamp(opacity, 0, 1),
         };
+
         brush.Freeze();
         return brush;
     }
@@ -326,14 +341,14 @@ internal static class AnnotationDrawing
             brush,
             1.0);
 
-        // 文字压在复杂背景上时需要描边才看得清
+        // 文字压在复杂背景上时需要描边才看得清（描边色走 Focal 的暗底令牌，不写字面量）
         var halo = new FormattedText(
             item.Text,
             System.Globalization.CultureInfo.CurrentCulture,
             FlowDirection.LeftToRight,
             typeface,
             item.Style.FontSize,
-            Brushes.Black,
+            FocalPalette.Void,
             1.0);
 
         var origin = ToPoint(item.Start);
@@ -359,23 +374,30 @@ internal static class AnnotationDrawing
         var center = ToPoint(item.Start);
         double radius = Math.Max(item.Style.FontSize * 0.8, 8);
 
-        var fill = new SolidColorBrush(ToColor(item.Style.Stroke));
-        fill.Freeze();
-        var outline = new Pen(Brushes.White, Math.Max(item.Style.FontSize / 8, 1));
-        outline.Freeze();
+        var fill = FocalPalette.FromRgb(item.Style.Stroke);
+        var ring = new Pen(FocalPalette.Brush("Focal.HandleRingBrush"), Math.Max(item.Style.FontSize / 10, 1));
+        ring.Freeze();
 
-        dc.DrawEllipse(fill, outline, center, radius, radius);
+        dc.DrawEllipse(fill, ring, center, radius, radius);
 
+        // 序号是数字：走等宽数据字体（Focal 的"数字等宽"规则），字重只到 SemiBold
         var text = new FormattedText(
             item.Badge.ToString(),
             System.Globalization.CultureInfo.CurrentCulture,
             FlowDirection.LeftToRight,
-            new Typeface(new FontFamily("Consolas, Microsoft YaHei UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal),
+            new Typeface(FocalPalette.DataFont, FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal),
             item.Style.FontSize,
-            Brushes.White,
+            BadgeGlyph(item.Style.Stroke),
             1.0);
 
         dc.DrawText(text, new Point(center.X - (text.Width / 2), center.Y - (text.Height / 2)));
+    }
+
+    /// <summary>序号字色：琥珀底 + 墨字是设计稿的形态；底色偏暗时翻成纸色，任何用户色都读得出。</summary>
+    private static Brush BadgeGlyph(RgbColor fill)
+    {
+        double luminance = ((0.299 * fill.R) + (0.587 * fill.G) + (0.114 * fill.B)) / 255.0;
+        return luminance > 0.55 ? FocalPalette.AccentInk : FocalPalette.Paper;
     }
 
     private static void DrawPolyline(DrawingContext dc, Pen pen, IReadOnlyList<PhysicalPoint> points)
@@ -406,8 +428,6 @@ internal static class AnnotationDrawing
         geometry.Freeze();
         dc.DrawGeometry(null, pen, geometry);
     }
-
-    private static Color ToColor(RgbColor color) => Color.FromRgb(color.R, color.G, color.B);
 
     private static Point ToPoint(PhysicalPoint point) => new(point.X, point.Y);
 

@@ -291,6 +291,30 @@ UIA 查询走**线程池 + 超时 + 过期结果丢弃**，绝不阻塞界面—
 
 ---
 
+## 界面设计语言（Focal）
+
+界面语言由 UI 工程师交付在 [`design/focal/`](design/focal/README.md)（[`DESIGN.md`](design/focal/DESIGN.md) 是权威文档），
+落地约定见 [`docs/focal-UI实现约定.md`](docs/focal-UI实现约定.md)。一句话概括：
+
+> 截图工具永远不拥有背景 —— 遮罩浮在任意桌面内容之上，放大镜要读出单个物理像素。
+> 所以这套语言是 **dark-first** 的，全局只有一个交互色（Signal Amber `#F5A524`），
+> 深度靠表面色阶 + 1px 发丝线，阴影只给"浮在不可控内容之上"的机壳。
+
+| 落地文件 | 作用 |
+|---|---|
+| [`Theme/FocalTheme.xaml`](src/WhSnap.App/Theme/FocalTheme.xaml) | **令牌唯一来源**：颜色 / 画刷 / 字体 / 字号 / 圆角 / 度量 / 间距 / 层级 / 文本样式 |
+| [`Theme/FocalControls.xaml`](src/WhSnap.App/Theme/FocalControls.xaml) | 组件层：按钮两级语法 / 工具键 / 分段 / 开关 / 输入 / 下拉 / 滑杆 / 滚动条 / 列表行 / 导航项 / 横幅 / 卡片 / 键帽 / 色板 / 窗口机壳 |
+| [`Theme/FocalIcons.xaml`](src/WhSnap.App/Theme/FocalIcons.xaml) + [`FocalIcon.cs`](src/WhSnap.App/Theme/FocalIcon.cs) | 64 个自绘图标：24 网格 / 1.6 描边 / 只跟随 `Foreground` |
+| [`Theme/FocalPalette.cs`](src/WhSnap.App/Theme/FocalPalette.cs) | **C# 侧唯一取色入口**（含 WinForms 桥：字体 / 图标位图 / `System.Drawing.Color`） |
+
+规矩只有一条最容易被破：**界面代码里不允许出现字面量色值**——XAML 只允许 `{StaticResource Focal.*}`，
+C# 只允许 `FocalPalette.*`。`--focal-test` 会静态扫描并让违规构建失败。
+
+六个界面（遮罩 / 标注 / 设置 / 贴图管理 / 托盘菜单 / 首次向导）都已按视觉稿落地，
+其中托盘菜单是 WinForms 自绘（`Tray/FocalMenuRenderer.cs`），首次运行向导见 `Onboarding/`。
+
+---
+
 ## 构建
 
 前置：.NET 8 SDK（`winget install Microsoft.DotNet.SDK.8`）、Inno Setup 6（`winget install JRSoftware.InnoSetup`）。
@@ -388,6 +412,40 @@ Get-Content "$env:TEMP\whsnap-annotate-test.txt" -Encoding UTF8
 ```powershell
 & src\WhSnap.App\bin\Release\net8.0-windows10.0.22000.0\WhSnap.exe --element-test
 Get-Content "$env:TEMP\whsnap-element-test.txt" -Encoding UTF8
+```
+
+### Focal 设计一致性自检（`--focal-test`）
+
+把"设计交付包 → 代码"这条链路上最容易悄悄断掉的四件事变成可执行断言：**令牌齐全**
+（196 个键全部可解析）、**度量与设计值一致**（控件 30 / 行 32 / 标题栏 32 / 浮动条 44 / 圆角 6·10·14 / 基准 14）、
+**图标几何全部落在 24×24 网格内且非空**（64 个）、**对比度红线**（DESIGN §10 的自查表，
+含 `#F5A524` 压纸色只有 2.0:1 的禁令），以及**界面代码里没有字面量色值**：
+
+```powershell
+& src\WhSnap.App\bin\Release\net8.0-windows10.0.22000.0\WhSnap.exe --focal-test   # 退出码 0 = 全过
+Get-Content "$env:TEMP\whsnap-focal-test.txt" -Encoding UTF8
+```
+
+### Focal 视觉稿导出（`--focal-shots`）
+
+把令牌表 / 组件层 / 图标集在一张固定画布上真正**渲染**成 PNG，并整窗渲染设置、标注、贴图管理、首次向导四个真实窗口
+（离屏、屏幕外显示，不抢焦点）。它同时是"模板能不能跑"的回归：`StaticResource` 解析失败或 `ControlTemplate`
+写错都会在这里抛异常 —— `--focal-test` 只能验证键存在，验证不了模板：
+
+```powershell
+& src\WhSnap.App\bin\Release\net8.0-windows10.0.22000.0\WhSnap.exe --focal-shots --out artifacts\focal-shots
+# 产物可直接与 design/focal/shots/*.png 对照评审
+```
+
+首次运行向导的目视验收用 `--onboarding-preview`（不读配置、不写配置，按内置默认热键展示）。
+
+### 并发构建必须走加锁包装
+
+`obj/` 与 `bin/` 是共享状态，两个构建同时跑会互相破坏。仓库提供加锁包装：
+
+```powershell
+& .\build\tools\focal-build.ps1 -Quiet      # 与其它构建互斥；退出码 = dotnet build 的退出码
+& .\build\tools\focal-icons-check.ps1       # 只校验图标集（临时工程 + XamlReader.Load）
 ```
 
 ### 更新链路自检
@@ -616,22 +674,28 @@ src/
                         标注图元与命令栈、备份清单、DPI 换算、热键模型、设置 schema 与导入校验（可单测，无 UI 依赖）
   WhSnap.App/           WPF 宿主：托盘、遮罩、贴图、标注、设置、采集、服务、自检
     Capture/            抓屏后端（WGC/DXGI/GDI）、显示器枚举、截图编排、元素检测（UIA + 窗口矩形）
-    Overlay/            全屏遮罩窗口
+    Overlay/            全屏遮罩窗口 + 一次截图会话（选区/工具模式/确认动作）
     Pin/                分层贴图窗口、贴图管家、备份存储、贴图内容渲染、管理面板
     Annotation/         标注编辑器、合成管线、矢量绘制
     Settings/           设置窗口（由 schema 自动生成 UI）+ 热键录制与冲突展示
+    Onboarding/         首次运行向导（热键自检与开机自启）
+    Theme/              Focal 设计令牌与组件层（唯一色值来源：FocalTheme / FocalControls / FocalIcons / FocalPalette / FocalIcon）
     Interop/            全部 Win32 P/Invoke 集中于此（含 dbghelp 的 MiniDumpWriteDump）
     Services/           热键注册与 L1 探针、剪贴板监听与读入、设置绑定/导入导出、保存、自启、配置、日志、拓扑监听、
                         更新链路（UpdateService/UpdateCoordinator）、崩溃证据（CrashHandler）、诊断包（DiagnosticsPack）、
                         性能埋点（PerfTrace）
-    Tray/               托盘图标与菜单
-    Diagnostics/        无界面自检（selftest / overlay-test / pin-test / settings-test / annotate-test / element-test /
-                        update-test / crash-test / power-test / diagnostics-pack / capture-to）tests/
+    Tray/               托盘图标与菜单（Focal 自绘 ToolStripRenderer）
+    Diagnostics/        无界面自检（selftest / focal-test / focal-shots / overlay-test / pin-test / settings-test /
+                        annotate-test / element-test / update-test / crash-test / power-test / diagnostics-pack / capture-to）
+tests/
   WhSnap.Core.Tests/    xUnit
 build/
   installer/            Inno Setup 脚本、信任导入脚本
   tools/                图标生成、安装包构建、证书与签名、签名版安装包验收（verify-signed-install.ps1）、
+                        加锁构建包装（focal-build.ps1）、图标集校验（focal-icons-check.ps1）、
                         手册覆盖率校验（check-manual-coverage.ps1）
+design/focal/           UI 工程师交付的设计包（DESIGN.md 规范 / tokens.css / focal.css / icons.js /
+                        surfaces/*.html 六个高保真视觉稿 / theme/Theme.xaml 令牌映射）
 .github/workflows/      release
 ```
 
@@ -654,7 +718,10 @@ M0 预研与骨架 ✅ → M1 截图核心 ✅（多屏遮罩、WGC/DXGI/GDI）�
 M3 快捷键设置与全配置化 ✅（`v0.3.0-preview`）→ M4 全量标注 ✅（`v0.4.0-preview`）→
 M5 对标收尾 ✅（`v0.5.0-preview`：元素检测、取色器与颜色历史、托盘细化）→
 **M6 发布工程化 ✅（`v1.0.0-preview.1`）**：自动更新、诊断包、崩溃转储、性能埋点（§2.2 四项达标）、
-安装包完善、用户手册、`update.json` 与 CI 资产。
+安装包完善、用户手册、`update.json` 与 CI 资产 →
+**M7 UI 设计语言落地（Focal v1.0）**：令牌层与组件层合入 `Theme/`，六个界面按视觉稿重做
+（遮罩浮动工具条与 11×11 放大镜、标注左轨 13 工具、设置导轨 11 分组、贴图管理空状态、托盘自绘菜单、
+首次运行向导），并新增 `--focal-test` / `--focal-shots` 两条设计一致性与视觉回归命令。
 **发布收口 ✅（`v1.0.0-preview.2`）**：签名 Secret 已配、CI 产出**签名版** Release 与四类资产（含 `WhSnap.cer`）。
 
 **当前状态**：功能与发布工程均已完成，**`v1.0.0-preview.2` 已发布（签名版）**。
@@ -670,9 +737,9 @@ CI run `38788044031` **success**，Release 四类资产齐全（安装包 + `upd
 > 现在统一用 **hashtable splat**，请勿改回数组。
 > 完整取证见 [项目进度报告](docs/项目进度报告.md)。
 
-十个自检命令（`--selftest` / `--overlay-test` / `--pin-test` / `--settings-test` / `--annotate-test` /
-`--element-test` / `--update-test` / `--crash-test` / `--power-test` / `--diagnostics-pack`）全部 exit 0
-（另有 `--capture-to` 用于单后端抓屏诊断）。
+十二个自检命令（`--selftest` / `--focal-test` / `--focal-shots` / `--overlay-test` / `--pin-test` /
+`--settings-test` / `--annotate-test` / `--element-test` / `--update-test` / `--crash-test` / `--power-test` /
+`--diagnostics-pack`）全部 exit 0（另有 `--capture-to` 用于单后端抓屏诊断、`--onboarding-preview` 用于向导目视验收）。
 
 未在真机验证的两项：真实双屏（尤其混合缩放比）的鼠标捕获跨屏移交、HDR/宽色域下的截图表现。
 （唤醒后热键的影子已在 `--power-test` 里守住，剩下"真睡一觉再唤醒"这一步。）

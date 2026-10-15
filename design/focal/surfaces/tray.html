@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Focal · 托盘菜单</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../focal.css">
+<style>
+  /* 页面级：桌面背景 + 浮层定位。菜单本身仍是 .f-menu（唯一允许 L1 阴影的机壳之一） */
+  html, body { width: 700px; height: 760px; overflow: hidden; background: var(--obsidian-800); }
+
+  .tr-desk { position: absolute; inset: 0; background: var(--obsidian-800); }
+  .tr-desk__scrim { position: absolute; inset: 0; background: var(--scrim); }
+
+  /* 浮层：两块机壳合成一个"单位"居中，竖向成列 */
+  .tr-float {
+    position: absolute; left: 160px; top: 20px;
+    display: flex; flex-direction: column; align-items: center; gap: var(--sp-md);
+  }
+
+  .tr-menu { width: 300px; padding: var(--sp-xs); }
+  .tr-menu .f-menuitem { gap: var(--sp-sm); }
+
+  /* 悬停态：高保真演示里必须有一项"正被指到"，否则菜单读起来是死的 */
+  .tr-menu .is-hover,
+  .tr-menu .is-hover .f-i { background: var(--accent); color: var(--accent-ink); }
+  .tr-menu .is-hover { border-radius: var(--r-control); }
+  .tr-menu .is-hover .f-menu__keys { color: rgba(26,18,6,.72); }
+
+  .tr-keys { margin-left: auto; color: var(--text-faint); font-family: var(--font-data); font-size: var(--fs-caption); }
+  .tr-menu .is-hover .tr-keys { color: rgba(26,18,6,.72); }
+  .tr-count {
+    margin-left: auto;
+    font-family: var(--font-data); font-size: var(--fs-caption);
+    color: var(--text-faint);
+  }
+  .tr-menu .is-hover .tr-count { color: rgba(26,18,6,.72); }
+
+  /* 最近颜色：复用 .f-colorgrid，只把格子放大到能读出色值的宽度 */
+  .tr-colors { width: 380px; padding: 0 var(--sp-lg) var(--sp-sm); }
+  .tr-colors__head { display: flex; align-items: center; gap: var(--sp-sm); padding: var(--sp-md) 0 var(--sp-sm); }
+  .tr-colors__grid.f-colorgrid { grid-template-columns: repeat(6, 1fr); gap: var(--sp-sm); padding: 0; }
+  .tr-color { display: flex; flex-direction: column; gap: var(--sp-2xs); min-width: 0; }
+  .tr-color .f-swatch { width: 100%; height: 32px; border-radius: var(--r-control); }
+  .tr-color__hex { font-family: var(--font-data); font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0; color: var(--text); }
+  .tr-color__use { font-size: var(--fs-micro); line-height: var(--lh-micro); color: var(--text-faint); white-space: nowrap; }
+  .tr-colors__foot {
+    display: flex; align-items: center; gap: var(--sp-sm);
+    margin-top: var(--sp-md); padding-top: var(--sp-sm);
+    border-top: 1px solid var(--border-soft);
+  }
+
+  /* 菜单底部状态行：贴在画布左下角，与浮层错开，不压在色板面板上 */
+  .tr-status { position: absolute; left: var(--sp-lg); bottom: var(--sp-lg); display: flex; align-items: center; gap: var(--sp-sm); }
+
+  .tr-cursor { position: absolute; left: 174px; top: 100px; color: #fff; }
+</style>
+</head>
+<body data-theme="obsidian">
+
+<div class="tr-desk"></div>
+<div class="tr-desk__scrim"></div>
+
+<!-- 浮起的两块机壳：托盘菜单 + 最近颜色 -->
+<div class="tr-float">
+
+  <div class="f-menu tr-menu">
+
+    <div class="f-menuitem">
+      <svg class="f-i"><use href="#i-crop"/></svg>
+      <span class="f-menuitem__label">截图</span>
+      <span class="tr-keys">F1</span>
+    </div>
+
+    <div class="f-menuitem is-hover">
+      <svg class="f-i"><use href="#i-clipboard"/></svg>
+      <span class="f-menuitem__label">从剪贴板贴图</span>
+      <span class="tr-keys">监听中</span>
+    </div>
+
+    <div class="f-menuitem">
+      <svg class="f-i"><use href="#i-layers"/></svg>
+      <span class="f-menuitem__label">贴图管理…</span>
+      <span class="tr-count">3 张</span>
+    </div>
+
+    <div class="f-menusep"></div>
+
+    <div class="f-menuitem">
+      <svg class="f-i"><use href="#i-image"/></svg>
+      <span class="f-menuitem__label">显示全部贴图</span>
+      <span class="tr-count">3</span>
+    </div>
+    <div class="f-menuitem">
+      <svg class="f-i"><use href="#i-eye-off"/></svg>
+      <span class="f-menuitem__label">隐藏全部贴图</span>
+    </div>
+    <div class="f-menuitem">
+      <svg class="f-i"><use href="#i-x"/></svg>
+      <span class="f-menuitem__label">关闭全部贴图</span>
+    </div>
+
+    <div class="f-menusep"></div>
+
+    <div class="f-menuitem">
+      <svg class="f-i"><use href="#i-folder"/></svg>
+      <span class="f-menuitem__label">打开保存目录</span>
+    </div>
+    <div class="f-menuitem">
+      <svg class="f-i"><use href="#i-folder"/></svg>
+      <span class="f-menuitem__label">打开配置目录</span>
+    </div>
+    <div class="f-menuitem">
+      <svg class="f-i"><use href="#i-folder"/></svg>
+      <span class="f-menuitem__label">打开贴图备份目录</span>
+    </div>
+
+    <div class="f-menusep"></div>
+
+    <div class="f-menuitem">
+      <svg class="f-i"><use href="#i-gear"/></svg>
+      <span class="f-menuitem__label">设置…</span>
+      <span class="tr-keys">Ctrl+Shift+,</span>
+    </div>
+    <div class="f-menuitem">
+      <svg class="f-i"><use href="#i-refresh"/></svg>
+      <span class="f-menuitem__label">检查更新…</span>
+    </div>
+    <div class="f-menuitem">
+      <svg class="f-i"><use href="#i-download"/></svg>
+      <span class="f-menuitem__label">导出诊断包…</span>
+    </div>
+
+    <div class="f-menusep"></div>
+
+    <div class="f-menuitem">
+      <svg class="f-i"><use href="#i-eyedropper"/></svg>
+      <span class="f-menuitem__label">取色器（取色并复制）</span>
+    </div>
+
+    <div class="f-menusep"></div>
+
+    <div class="f-menuitem">
+      <span class="f-menu__check"><svg class="f-i f-i--sm"><use href="#i-check"/></svg></span>
+      <span class="f-menuitem__label">开机自启</span>
+    </div>
+
+    <div class="f-menusep"></div>
+
+    <div class="f-menuitem">
+      <svg class="f-i"><use href="#i-info"/></svg>
+      <span class="f-menuitem__label">关于 WhSnap</span>
+    </div>
+    <div class="f-menuitem f-menuitem--danger">
+      <svg class="f-i"><use href="#i-power"/></svg>
+      <span class="f-menuitem__label">退出</span>
+    </div>
+
+  </div>
+
+  <div class="f-menu tr-colors">
+    <div class="tr-colors__head">
+      <svg class="f-i f-i--sm" style="color:var(--text-faint)"><use href="#i-palette"/></svg>
+      <span class="f-micro f-grow">最近颜色</span>
+      <span class="f-caption f-faint">6 个 · 最多保留 12 个</span>
+    </div>
+
+    <div class="tr-colors__grid f-colorgrid">
+      <div class="tr-color">
+        <button class="f-swatch" style="background:#f5a524" title="#F5A524 · 今天 09:14" aria-label="#F5A524"></button>
+        <span class="tr-color__hex">#F5A524</span>
+        <span class="tr-color__use">今天 09:14</span>
+      </div>
+      <div class="tr-color">
+        <button class="f-swatch" style="background:#14161a" title="#14161A · 今天 09:02" aria-label="#14161A"></button>
+        <span class="tr-color__hex">#14161A</span>
+        <span class="tr-color__use">今天 09:02</span>
+      </div>
+      <div class="tr-color">
+        <button class="f-swatch" style="background:#57c7ff" title="#57C7FF · 昨天 17:40" aria-label="#57C7FF"></button>
+        <span class="tr-color__hex">#57C7FF</span>
+        <span class="tr-color__use">昨天 17:40</span>
+      </div>
+      <div class="tr-color">
+        <button class="f-swatch" style="background:#2fb27c" title="#2FB27C · 昨天 17:39" aria-label="#2FB27C"></button>
+        <span class="tr-color__hex">#2FB27C</span>
+        <span class="tr-color__use">昨天 17:39</span>
+      </div>
+      <div class="tr-color">
+        <button class="f-swatch" style="background:#e5484d" title="#E5484D · 3 月 27 日" aria-label="#E5484D"></button>
+        <span class="tr-color__hex">#E5484D</span>
+        <span class="tr-color__use">3 月 27 日</span>
+      </div>
+      <div class="tr-color">
+        <button class="f-swatch" style="background:#ffffff" title="#FFFFFF · 3 月 27 日" aria-label="#FFFFFF"></button>
+        <span class="tr-color__hex">#FFFFFF</span>
+        <span class="tr-color__use">3 月 27 日</span>
+      </div>
+    </div>
+
+    <div class="tr-colors__foot">
+      <span class="f-caption f-faint">左键复制色值 · 右键复制 RGB</span>
+      <span class="f-grow"></span>
+      <button class="f-btn f-btn--sm"><svg class="f-i f-i--sm"><use href="#i-trash"/></svg>清空颜色历史</button>
+    </div>
+  </div>
+
+</div>
+
+<svg class="f-i tr-cursor" style="width:20px;height:20px"><use href="#i-pointer"/></svg>
+
+<div class="tr-status">
+  <span class="f-dot"></span>
+  <span class="f-data">贴图 3 张 · 剪贴板监听中 · v1.0.0-preview.2</span>
+</div>
+
+<script src="../icons.js"></script>
+</body>
+</html>

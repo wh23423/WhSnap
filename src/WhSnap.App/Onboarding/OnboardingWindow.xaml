@@ -1,0 +1,506 @@
+<Window x:Class="WhSnap.Onboarding.OnboardingWindow"
+        x:ClassModifier="internal"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:theme="clr-namespace:WhSnap.Theme"
+        xmlns:local="clr-namespace:WhSnap.Onboarding"
+        Title="WhSnap 首次运行向导"
+        Width="880" Height="620"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterScreen"
+        AllowsTransparency="True"
+        Background="Transparent"
+        FontFamily="{StaticResource Focal.TextFont}"
+        FontSize="{StaticResource Focal.BodySize}"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True">
+
+    <!--
+      首次运行向导（design/focal/surfaces/onboarding.html 的 WPF 落地）
+      固定画布 880×620 / 单页 + 3 段进度 / obsidian 机壳。
+      颜色 · 圆角 · 度量 · 字号全部走 Focal 令牌，不出现字面量色值。
+
+      交互模型：整行是一个键位录制按钮（行本身就是录制器），
+      键位展示是行内按 Focal.KeycapButton 观感自绘的键位块
+      （obsidian-900 凹槽 + 发丝线 + 高 30 / 最小宽 104），三行键位落在同一条竖线上。
+    -->
+
+    <Window.Resources>
+        <!-- 热键行：Focal.Card 的观感（obsidian-800 + 发丝线 + 圆角 10）+ "整行可点即录"的行为。
+             录制态 / 冲突态由附加属性 local:KeycapButton.IsRecording / IsConflict 驱动，
+             行内前景（标签、说明、键帽字）随 VisualStateManager 的状态一起切。 -->
+        <Style x:Key="Focal.KeycapButtonRow" TargetType="Button">
+            <Setter Property="Padding" Value="8,10,8,10"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{StaticResource Focal.FocusVisual}"/>
+            <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkBrush}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Row"
+                                Background="{StaticResource Focal.Obsidian800Brush}"
+                                BorderBrush="{StaticResource Focal.HairlineDarkBrush}"
+                                BorderThickness="1"
+                                CornerRadius="{StaticResource Focal.RadiusCard}"
+                                Padding="{TemplateBinding Padding}"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup x:Name="RecordingStates">
+                                    <!-- 常态：Focal.Card 观感，字色 OnDark -->
+                                    <VisualState x:Name="RecordingOff"/>
+                                    <!-- 录制中：琥珀边界 + 琥珀字（1.2s 脉冲由 code-behind 的 Storyboard 负责） -->
+                                    <VisualState x:Name="RecordingOn">
+                                        <Storyboard>
+                                            <ColorAnimation Storyboard.TargetName="Row"
+                                                            Storyboard.TargetProperty="(Border.BorderBrush).(SolidColorBrush.Color)"
+                                                            To="{StaticResource Focal.AccentColor}" Duration="0"/>
+                                        </Storyboard>
+                                    </VisualState>
+                                    <!-- 冲突：danger 只出现在状态面 -->
+                                    <VisualState x:Name="Conflict">
+                                        <Storyboard>
+                                            <ColorAnimation Storyboard.TargetName="Row"
+                                                            Storyboard.TargetProperty="(Border.BorderBrush).(SolidColorBrush.Color)"
+                                                            To="{StaticResource Focal.SignalDangerColor}" Duration="0"/>
+                                        </Storyboard>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Row" Property="BorderBrush" Value="{StaticResource Focal.HairlineDarkStrongBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+    <Grid Margin="18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- L1 机壳底 + 阴影：向导浮在不可控的桌面内容之上 -->
+        <Border Grid.Row="0" Grid.RowSpan="2"
+                Background="{StaticResource Focal.VoidBrush}"
+                CornerRadius="{StaticResource Focal.RadiusPanel}"
+                Effect="{StaticResource Focal.ShadowChrome}" />
+
+        <Border Grid.Row="0" Grid.RowSpan="2"
+                Style="{StaticResource Focal.WindowShell}"
+                ClipToBounds="True">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <!-- 注意：RowDefinition.Height / ColumnDefinition.Width 是 GridLength，
+                         WPF 不会把资源里的 double 转成 GridLength（运行时抛 "不是属性 Height 的有效值"），
+                         所以标题栏高度这里写设计值 32（= Focal.TitleBarHeight 令牌值），不用 StaticResource。 -->
+                    <RowDefinition Height="32" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- ════════════ 标题栏（32） ════════════ -->
+                <Border Grid.Row="0"
+                        Style="{StaticResource Focal.TitleBar}"
+                        MouseLeftButtonDown="OnTitleBarMouseDown">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <theme:FocalIcon Grid.Column="0"
+                                         Icon="brand"
+                                         Size="{StaticResource Focal.IconSm}"
+                                         Margin="12,0,0,0"
+                                         VerticalAlignment="Center"
+                                         Foreground="{StaticResource Focal.AccentBrush}" />
+
+                        <TextBlock Grid.Column="1"
+                                   Margin="8,0,0,0"
+                                   Text="WhSnap"
+                                   Style="{StaticResource Focal.TitleBarText}" />
+
+                        <TextBlock Grid.Column="3"
+                                   Margin="0,0,12,0"
+                                   VerticalAlignment="Center"
+                                   Text="v1.0.0-preview.2"
+                                   FontFamily="{StaticResource Focal.DataFont}"
+                                   FontSize="{StaticResource Focal.CaptionSize}"
+                                   Foreground="{StaticResource Focal.OnDarkFaintBrush}" />
+
+                        <Button Grid.Column="4"
+                                Style="{StaticResource Focal.WindowButtonClose}"
+                                Margin="0,0,6,0"
+                                VerticalAlignment="Center"
+                                ToolTip="关闭（Esc）"
+                                Click="OnCloseClick">
+                            <theme:FocalIcon Icon="x" Size="{StaticResource Focal.IconSm}" />
+                        </Button>
+                    </Grid>
+                </Border>
+
+                <!-- ════════════ Hero：56×56 琥珀标记 + 标题 + 一句人话 + 3 段进度 ════════════ -->
+                <StackPanel Grid.Row="1" Margin="32,20,32,12">
+
+                    <!-- 标记 56×56 / 圆角 14 / 琥珀底 + 墨色 brand 图标；外圈 8px 琥珀光晕 -->
+                    <Grid Width="72" Height="72" HorizontalAlignment="Center">
+                        <Border Width="72" Height="72"
+                                Background="{StaticResource Focal.AccentTintBrush}"
+                                CornerRadius="{StaticResource Focal.RadiusPanel}" />
+                        <Border Width="56" Height="56"
+                                Background="{StaticResource Focal.AccentBrush}"
+                                CornerRadius="{StaticResource Focal.RadiusPanel}">
+                            <theme:FocalIcon Icon="brand"
+                                             Size="{StaticResource Focal.IconXl}"
+                                             HorizontalAlignment="Center"
+                                             VerticalAlignment="Center"
+                                             Foreground="{StaticResource Focal.AccentInkBrush}" />
+                        </Border>
+                    </Grid>
+
+                    <TextBlock Margin="0,12,0,0"
+                               TextAlignment="Center"
+                               Text="按一下 F1，就能截下屏幕上的任何一块"
+                               Style="{StaticResource Focal.DisplayText}" />
+
+                    <!-- 副标题断行是设计的一部分：自己断，不交给居中折行 -->
+                    <StackPanel Margin="0,8,0,0">
+                        <TextBlock TextAlignment="Center"
+                                   Text="框选要保留的区域 → 用方向键微调边界，需要时加上标注 →"
+                                   Style="{StaticResource Focal.CaptionText}" />
+                        <TextBlock TextAlignment="Center"
+                                   Text="复制到剪贴板、存成文件，或者贴成一张随时可见的浮图。"
+                                   Style="{StaticResource Focal.CaptionText}" />
+                    </StackPanel>
+
+                    <!-- 进度条：3 段 24×3 / 圆角 2 / 当前段琥珀 -->
+                    <StackPanel Margin="0,12,0,0" Orientation="Horizontal" HorizontalAlignment="Center">
+                        <Border Width="24" Height="3"
+                                Background="{StaticResource Focal.AccentBrush}"
+                                CornerRadius="{StaticResource Focal.RadiusHair}" />
+                        <Border Width="24" Height="3" Margin="6,0,0,0"
+                                Background="{StaticResource Focal.Obsidian600Brush}"
+                                CornerRadius="{StaticResource Focal.RadiusHair}" />
+                        <Border Width="24" Height="3" Margin="6,0,0,0"
+                                Background="{StaticResource Focal.Obsidian600Brush}"
+                                CornerRadius="{StaticResource Focal.RadiusHair}" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- ════════════ 主体：三个热键行（整行点击进入录制态） ════════════ -->
+                <Grid Grid.Row="2">
+                <StackPanel Margin="32,0,32,0">
+
+                    <!-- ① 区域截图（默认键位取自 HotkeyCatalog：capture.region） -->
+                    <Button x:Name="RowCapture"
+                            Style="{StaticResource Focal.KeycapButtonRow}"
+                            Tag="capture.region"
+                            Click="OnRowClick">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <Border x:Name="RowCaptureIcon"
+                                    Grid.Column="0"
+                                    Width="32" Height="32"
+                                    VerticalAlignment="Center"
+                                    Background="{StaticResource Focal.Obsidian700Brush}"
+                                    BorderBrush="{StaticResource Focal.HairlineDarkBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{StaticResource Focal.RadiusControl}">
+                                <theme:FocalIcon x:Name="RowCaptureGlyph"
+                                                 Icon="crop"
+                                                 Size="{StaticResource Focal.IconMd}"
+                                                 HorizontalAlignment="Center"
+                                                 VerticalAlignment="Center"
+                                                 Foreground="{StaticResource Focal.OnDarkMutedBrush}" />
+                            </Border>
+
+                            <StackPanel Grid.Column="1" Width="520" Margin="12,0,0,0" VerticalAlignment="Center">
+                                <TextBlock Text="截图" Style="{StaticResource Focal.BodyStrongText}" />
+                                <TextBlock x:Name="RowCaptureHint"
+                                           Margin="0,3,0,0"
+                                           Text="全局热键，任何程序前台时都能唤起框选遮罩"
+                                           Style="{StaticResource Focal.CaptionText}" />
+                                <StackPanel x:Name="RowCaptureState" Visibility="Collapsed" Orientation="Horizontal">
+                                    <Ellipse Width="6" Height="6"
+                                             VerticalAlignment="Center"
+                                             Fill="{StaticResource Focal.AccentBrush}" />
+                                    <TextBlock Margin="6,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Text="正在录制：请按下新的组合键，Esc 取消"
+                                               Style="{StaticResource Focal.CaptionText}" />
+                                </StackPanel>
+                            </StackPanel>
+
+                            <Border x:Name="RowCaptureKeycap"
+                                    Grid.Column="3"
+                                    MinWidth="104"
+                                    Height="{StaticResource Focal.ControlHeight}"
+                                    VerticalAlignment="Center"
+                                    Background="{StaticResource Focal.Obsidian900Brush}"
+                                    BorderBrush="{StaticResource Focal.HairlineDarkBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{StaticResource Focal.RadiusControl}"
+                                    Padding="12,0,12,0">
+                                <TextBlock x:Name="RowCaptureKeys" Style="{StaticResource Focal.KbdText}" HorizontalAlignment="Center" />
+                            </Border>
+                        </Grid>
+                    </Button>
+
+                    <!-- ② 贴图剪贴板（capture.pinClipboard） -->
+                    <Button x:Name="RowPinClipboard"
+                            Margin="0,8,0,0"
+                            Style="{StaticResource Focal.KeycapButtonRow}"
+                            Tag="capture.pinClipboard"
+                            Click="OnRowClick">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <Border x:Name="RowPinClipboardIcon"
+                                    Grid.Column="0"
+                                    Width="32" Height="32"
+                                    VerticalAlignment="Center"
+                                    Background="{StaticResource Focal.Obsidian700Brush}"
+                                    BorderBrush="{StaticResource Focal.HairlineDarkBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{StaticResource Focal.RadiusControl}">
+                                <theme:FocalIcon x:Name="RowPinClipboardGlyph"
+                                                 Icon="pin"
+                                                 Size="{StaticResource Focal.IconMd}"
+                                                 HorizontalAlignment="Center"
+                                                 VerticalAlignment="Center"
+                                                 Foreground="{StaticResource Focal.OnDarkMutedBrush}" />
+                            </Border>
+
+                            <StackPanel Grid.Column="1" Width="520" Margin="12,0,0,0" VerticalAlignment="Center">
+                                <TextBlock Text="贴图剪贴板" Style="{StaticResource Focal.BodyStrongText}" />
+                                <TextBlock x:Name="RowPinClipboardHint"
+                                           Margin="0,3,0,0"
+                                           Text="把剪贴板里的图片直接贴成浮图，截完图按一下就够"
+                                           Style="{StaticResource Focal.CaptionText}" />
+                                <StackPanel x:Name="RowPinClipboardState" Visibility="Collapsed" Orientation="Horizontal">
+                                    <Ellipse Width="6" Height="6"
+                                             VerticalAlignment="Center"
+                                             Fill="{StaticResource Focal.AccentBrush}" />
+                                    <TextBlock Margin="6,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Text="正在录制：请按下新的组合键，Esc 取消"
+                                               Style="{StaticResource Focal.CaptionText}" />
+                                </StackPanel>
+                            </StackPanel>
+
+                            <Border x:Name="RowPinClipboardKeycap"
+                                    Grid.Column="3"
+                                    MinWidth="104"
+                                    Height="{StaticResource Focal.ControlHeight}"
+                                    VerticalAlignment="Center"
+                                    Background="{StaticResource Focal.Obsidian900Brush}"
+                                    BorderBrush="{StaticResource Focal.HairlineDarkBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{StaticResource Focal.RadiusControl}"
+                                    Padding="12,0,12,0">
+                                <TextBlock x:Name="RowPinClipboardKeys" Style="{StaticResource Focal.KbdText}" HorizontalAlignment="Center" />
+                            </Border>
+                        </Grid>
+                    </Button>
+
+                    <!-- ③ 打开设置 / 开始使用（settings.open） -->
+                    <Button x:Name="RowSettings"
+                            Margin="0,8,0,0"
+                            Style="{StaticResource Focal.KeycapButtonRow}"
+                            Tag="settings.open"
+                            Click="OnRowClick">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <Border x:Name="RowSettingsIcon"
+                                    Grid.Column="0"
+                                    Width="32" Height="32"
+                                    VerticalAlignment="Center"
+                                    Background="{StaticResource Focal.Obsidian700Brush}"
+                                    BorderBrush="{StaticResource Focal.HairlineDarkBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{StaticResource Focal.RadiusControl}">
+                                <theme:FocalIcon x:Name="RowSettingsGlyph"
+                                                 Icon="gear"
+                                                 Size="{StaticResource Focal.IconMd}"
+                                                 HorizontalAlignment="Center"
+                                                 VerticalAlignment="Center"
+                                                 Foreground="{StaticResource Focal.OnDarkMutedBrush}" />
+                            </Border>
+
+                            <StackPanel Grid.Column="1" Width="520" Margin="12,0,0,0" VerticalAlignment="Center">
+                                <TextBlock Text="打开设置" Style="{StaticResource Focal.BodyStrongText}" />
+                                <TextBlock x:Name="RowSettingsHint"
+                                           Margin="0,3,0,0"
+                                           Text="随时调出设置窗口，改键位、改保存位置、改遮罩浓度"
+                                           Style="{StaticResource Focal.CaptionText}" />
+                                <StackPanel x:Name="RowSettingsState" Visibility="Collapsed" Orientation="Horizontal">
+                                    <Ellipse Width="6" Height="6"
+                                             VerticalAlignment="Center"
+                                             Fill="{StaticResource Focal.AccentBrush}" />
+                                    <TextBlock Margin="6,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Text="正在录制：请按下新的组合键，Esc 取消"
+                                               Style="{StaticResource Focal.CaptionText}" />
+                                </StackPanel>
+                            </StackPanel>
+
+                            <Border x:Name="RowSettingsKeycap"
+                                    Grid.Column="3"
+                                    MinWidth="104"
+                                    Height="{StaticResource Focal.ControlHeight}"
+                                    VerticalAlignment="Center"
+                                    Background="{StaticResource Focal.Obsidian900Brush}"
+                                    BorderBrush="{StaticResource Focal.HairlineDarkBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{StaticResource Focal.RadiusControl}"
+                                    Padding="12,0,12,0">
+                                <TextBlock x:Name="RowSettingsKeys" Style="{StaticResource Focal.KbdText}" HorizontalAlignment="Center" />
+                            </Border>
+                        </Grid>
+                    </Button>
+
+                    <!-- 开机自启动：设计稿里唯一的开关行 -->
+                    <Border x:Name="AutoStartRow"
+                            Margin="0,10,0,0"
+                            Padding="12,12,12,12"
+                            Background="{StaticResource Focal.Obsidian800Brush}"
+                            BorderBrush="{StaticResource Focal.HairlineDarkBrush}"
+                            BorderThickness="1"
+                            CornerRadius="{StaticResource Focal.RadiusCard}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                <TextBlock Text="开机自启动" Style="{StaticResource Focal.BodyStrongText}" />
+                                <TextBlock x:Name="AutoStartHint"
+                                           Margin="0,3,0,0"
+                                           Text="登录 Windows 后自动驻留托盘，F1 随时可用。之后可以在托盘菜单里改。"
+                                           Style="{StaticResource Focal.RowHint}" />
+                            </StackPanel>
+
+                            <ToggleButton x:Name="AutoStartToggle"
+                                          Grid.Column="1"
+                                          Margin="16,0,0,0"
+                                          VerticalAlignment="Center"
+                                          Style="{StaticResource Focal.Switch}"
+                                          ToolTip="登录 Windows 后自动启动" />
+                        </Grid>
+                    </Border>
+                </StackPanel>
+
+                <!-- 冲突 / 保留键提示：语义色只出现在状态面。
+                     它是覆盖层而不是流内行 —— 固定的 620 高度里再塞一行会把内容顶出窗口。 -->
+                <Border x:Name="StatusBanner"
+                        Grid.Row="2"
+                        Margin="32,0,32,0"
+                        Padding="8,14,8,14"
+                        MaxHeight="52"
+                        VerticalAlignment="Top"
+                        Visibility="Collapsed"
+                        Background="{StaticResource Focal.Obsidian800Brush}"
+                        BorderBrush="{StaticResource Focal.SignalDangerBrush}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource Focal.RadiusCard}">
+                    <StackPanel Orientation="Horizontal">
+                        <theme:FocalIcon Icon="info"
+                                         Size="{StaticResource Focal.IconMd}"
+                                         VerticalAlignment="Top"
+                                         Foreground="{StaticResource Focal.SignalDangerBrush}" />
+                        <TextBlock x:Name="StatusText"
+                                   Margin="8,0,0,0"
+                                   VerticalAlignment="Center"
+                                   TextWrapping="Wrap"
+                                   FontFamily="{StaticResource Focal.TextFont}"
+                                   FontSize="{StaticResource Focal.CaptionSize}"
+                                   Foreground="{StaticResource Focal.SignalDangerBrush}" />
+                    </StackPanel>
+                </Border>
+                </Grid>
+
+                <!-- ════════════ 底部：跳过 / 开始使用 ════════════ -->
+                <Border Grid.Row="3"
+                        Padding="32,10,32,14"
+                        BorderBrush="{StaticResource Focal.HairlineDarkBrush}"
+                        BorderThickness="0,1,0,0">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <Button Grid.Column="0"
+                                Style="{StaticResource Focal.Button.Quiet}"
+                                Click="OnManualClick">
+                            <StackPanel Orientation="Horizontal">
+                                <theme:FocalIcon Icon="info"
+                                                 Size="{StaticResource Focal.IconSm}"
+                                                 VerticalAlignment="Center" />
+                                <TextBlock Margin="6,0,0,0" Text="打开用户手册" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
+                        <StackPanel Grid.Column="2"
+                                    Orientation="Horizontal"
+                                    VerticalAlignment="Center">
+                            <StackPanel Margin="0,0,12,0"
+                                        Orientation="Horizontal"
+                                        VerticalAlignment="Center">
+                                <theme:FocalIcon Icon="info"
+                                                 Size="{StaticResource Focal.IconSm}"
+                                                 VerticalAlignment="Center"
+                                                 Foreground="{StaticResource Focal.OnDarkFaintBrush}" />
+                                <TextBlock Margin="6,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Text="首次运行向导 · 第 1 步，共 3 步"
+                                           FontFamily="{StaticResource Focal.TextFont}"
+                                           FontSize="{StaticResource Focal.CaptionSize}"
+                                           Foreground="{StaticResource Focal.OnDarkFaintBrush}" />
+                            </StackPanel>
+
+                            <Button Style="{StaticResource Focal.Button.Quiet}"
+                                    Content="稍后再看"
+                                    Click="OnSkipClick" />
+
+                            <Button Margin="12,0,0,0"
+                                    Style="{StaticResource Focal.Button.Primary}"
+                                    Content="开始使用"
+                                    Click="OnStartClick" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

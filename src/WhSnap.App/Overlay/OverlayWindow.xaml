@@ -2,6 +2,7 @@
         x:ClassModifier="internal"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:theme="clr-namespace:WhSnap.Theme"
         Title="WhSnap 截图"
         WindowStyle="None"
         ResizeMode="NoResize"
@@ -9,7 +10,7 @@
         Topmost="True"
         WindowStartupLocation="Manual"
         AllowsTransparency="False"
-        Background="#FF0B0B0B"
+        Background="{StaticResource Focal.CanvasBrush}"
         Cursor="Cross"
         Focusable="True"
         UseLayoutRounding="True"
@@ -17,7 +18,7 @@
 
     <Grid x:Name="Root" ClipToBounds="True" Background="Transparent">
 
-        <!-- 本显示器那一块冻结画面：按物理像素 1:1 呈现 -->
+        <!-- 本显示器那一块冻结画面：按物理像素 1:1 呈现（选区保持原始亮度） -->
         <Image x:Name="FrozenImage"
                Stretch="None"
                HorizontalAlignment="Left"
@@ -25,104 +26,305 @@
                RenderOptions.BitmapScalingMode="NearestNeighbor"
                RenderOptions.EdgeMode="Aliased" />
 
-        <!-- 暗化层、选区边框、8 向手柄（代码构建） -->
+        <!-- 暗幕四块拼接（把选区"挖"出来）、选区边框、8 向手柄：代码构建 -->
         <Canvas x:Name="Layer" ClipToBounds="True" />
 
-        <!-- HUD：放大镜 + 尺寸 + 色值 -->
+        <!-- HUD：元素高亮 / 尺寸标签 / 放大镜 —— 全部不可命中，避免抢走框选手势 -->
         <Canvas x:Name="HudLayer" ClipToBounds="True" IsHitTestVisible="False">
 
-            <!-- 元素检测：光标下的界面元素高亮框 -->
+            <!-- 元素检测：光标下的界面元素高亮（固定语义色 measure-element，与主题无关） -->
             <Border x:Name="ElementBorder"
                     Visibility="Collapsed"
-                    BorderBrush="#FF35C7FF"
+                    BorderBrush="{StaticResource Focal.MeasureElementBrush}"
                     BorderThickness="2"
-                    Background="#2035C7FF"
-                    CornerRadius="2">
-                <Border x:Name="ElementLabelBorder"
-                        Background="#E61B1B1B"
-                        CornerRadius="3"
-                        Padding="6,2"
-                        HorizontalAlignment="Left"
-                        VerticalAlignment="Top">
+                    Background="{StaticResource Focal.MeasureElementFillBrush}"
+                    CornerRadius="2" />
+
+            <!-- 元素名称标签：贴在元素外侧（上方放不下时翻到下方），蓝底墨字 -->
+            <Border x:Name="ElementLabelBorder"
+                    Visibility="Collapsed"
+                    Background="{StaticResource Focal.MeasureElementBrush}"
+                    CornerRadius="3"
+                    Height="20"
+                    Padding="6,0,6,0">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <theme:FocalIcon Icon="pointer" Size="12"
+                                     Foreground="{StaticResource Focal.MeasureElementInkBrush}" />
                     <TextBlock x:Name="ElementLabel"
-                               Foreground="#FFF2F2F2"
-                               FontFamily="Microsoft YaHei UI"
-                               FontSize="11" />
-                </Border>
+                               Margin="4,0,0,0"
+                               VerticalAlignment="Center"
+                               FontFamily="{StaticResource Focal.TextFont}"
+                               FontSize="{StaticResource Focal.CaptionSize}"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource Focal.MeasureElementInkBrush}" />
+                </StackPanel>
             </Border>
 
-            <!-- 颜色历史（取色器） -->
+            <!-- 取色器的颜色历史：色块网格（颜色用眼睛找，不用一列文字） -->
             <Border x:Name="ColorHistoryPanel"
                     Visibility="Collapsed"
-                    Background="#CC1B1B1B"
-                    BorderBrush="#553B9CFF"
+                    Background="{StaticResource Focal.HudBrush}"
+                    BorderBrush="{StaticResource Focal.HairlineDarkStrongBrush}"
                     BorderThickness="1"
-                    CornerRadius="3"
-                    Padding="6,4">
-                <StackPanel x:Name="ColorHistoryStrip" Orientation="Horizontal" />
+                    CornerRadius="{StaticResource Focal.RadiusCard}"
+                    Padding="6,4,6,4">
+                <StackPanel>
+                    <TextBlock Text="最近颜色"
+                               Style="{StaticResource Focal.MicroText}"
+                               Margin="2,0,0,2" />
+                    <StackPanel x:Name="ColorHistoryStrip" Orientation="Horizontal" />
+                </StackPanel>
             </Border>
 
+            <!-- 尺寸标签：内容永远是「宽 × 高 · x, y · 缩放」，贴在选区外侧 -->
+            <Border x:Name="SizeLabel"
+                    Visibility="Collapsed"
+                    Height="{StaticResource Focal.SizeLabelHeight}"
+                    Background="{StaticResource Focal.HudBrush}"
+                    BorderBrush="{StaticResource Focal.HairlineDarkStrongBrush}"
+                    BorderThickness="1"
+                    CornerRadius="{StaticResource Focal.RadiusControl}"
+                    Padding="8,0,8,0">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <theme:FocalIcon Icon="ruler" Size="14"
+                                     Foreground="{StaticResource Focal.OnDarkMutedBrush}" />
+                    <TextBlock x:Name="SizeLabelSize"
+                               Margin="6,0,0,0"
+                               Style="{StaticResource Focal.DataCaptionText}" />
+                    <TextBlock Text="·" Margin="6,0,6,0" Style="{StaticResource Focal.DataCaptionText}"
+                               Foreground="{StaticResource Focal.OnDarkFaintBrush}" />
+                    <TextBlock x:Name="SizeLabelPosition"
+                               Style="{StaticResource Focal.DataCaptionText}"
+                               Foreground="{StaticResource Focal.OnDarkMutedBrush}" />
+                    <TextBlock Text="·" Margin="6,0,6,0" Style="{StaticResource Focal.DataCaptionText}"
+                               Foreground="{StaticResource Focal.OnDarkFaintBrush}" />
+                    <TextBlock x:Name="SizeLabelScale"
+                               Style="{StaticResource Focal.DataCaptionText}"
+                               Foreground="{StaticResource Focal.AccentBrush}" />
+                </StackPanel>
+            </Border>
+
+            <!-- 放大镜：11×11 物理像素 + 1px 网格 + 中心像素环 + 四行读数（L1 机壳） -->
             <Border x:Name="MagnifierPanel"
                     Visibility="Collapsed"
-                    Background="#FF0E0E0E"
-                    BorderBrush="#803B9CFF"
+                    Background="{StaticResource Focal.Obsidian900Brush}"
+                    BorderBrush="{StaticResource Focal.HairlineDarkStrongBrush}"
                     BorderThickness="1"
-                    CornerRadius="2">
-                <Grid x:Name="MagnifierRoot">
-                    <Image x:Name="MagnifierImage"
-                           Stretch="Fill"
-                           RenderOptions.BitmapScalingMode="NearestNeighbor"
-                           RenderOptions.EdgeMode="Aliased" />
-                    <Canvas x:Name="MagnifierGrid" ClipToBounds="True" />
-                    <Rectangle x:Name="MagnifierCenter"
-                               Stroke="#FFFFD34D"
-                               StrokeThickness="1"
-                               Fill="#26FFD34D"
-                               IsHitTestVisible="False" />
-                </Grid>
-            </Border>
+                    CornerRadius="{StaticResource Focal.RadiusCard}"
+                    Padding="{StaticResource Focal.LoupePaddingThickness}"
+                    Effect="{StaticResource Focal.ShadowChrome}">
+                <StackPanel>
+                    <Border x:Name="MagnifierRoot"
+                            Background="{StaticResource Focal.CanvasBrush}"
+                            CornerRadius="{StaticResource Focal.RadiusControl}"
+                            ClipToBounds="True">
+                        <Grid>
+                            <Image x:Name="MagnifierImage"
+                                   Stretch="Fill"
+                                   RenderOptions.BitmapScalingMode="NearestNeighbor"
+                                   RenderOptions.EdgeMode="Aliased" />
+                            <Canvas x:Name="MagnifierGrid" ClipToBounds="True" />
+                            <!-- 十字线：帮助定位中心像素在整屏里的位置 -->
+                            <Rectangle x:Name="MagnifierCrossH" Height="1" VerticalAlignment="Center"
+                                       Fill="{StaticResource Focal.LoupeCrossBrush}" IsHitTestVisible="False" />
+                            <Rectangle x:Name="MagnifierCrossV" Width="1" HorizontalAlignment="Center"
+                                       Fill="{StaticResource Focal.LoupeCrossBrush}" IsHitTestVisible="False" />
+                            <!-- 中心像素环：琥珀描边 + 外侧 1px 暗描边，压在任意内容上都看得见 -->
+                            <Rectangle x:Name="MagnifierCenter"
+                                       Stroke="{StaticResource Focal.MeasureCenterBrush}"
+                                       StrokeThickness="1"
+                                       Fill="{StaticResource Focal.MeasureCenterFillBrush}"
+                                       IsHitTestVisible="False" />
+                        </Grid>
+                    </Border>
 
-            <Border x:Name="HudBorder"
-                    Visibility="Collapsed"
-                    Background="#E61B1B1B"
-                    BorderBrush="#553B9CFF"
-                    BorderThickness="1"
-                    CornerRadius="3"
-                    Padding="7,3">
-                <TextBlock x:Name="HudText"
-                           Foreground="#FFF2F2F2"
-                           FontFamily="Consolas, Microsoft YaHei UI"
-                           FontSize="12" />
-            </Border>
-
-            <Border x:Name="ColorBorder"
-                    Visibility="Collapsed"
-                    Background="#E61B1B1B"
-                    BorderBrush="#553B9CFF"
-                    BorderThickness="1"
-                    CornerRadius="3"
-                    Padding="7,3">
-                <TextBlock x:Name="ColorText"
-                           Foreground="#FFF2F2F2"
-                           FontFamily="Consolas, Microsoft YaHei UI"
-                           FontSize="12" />
+                    <StackPanel x:Name="MagnifierReadout" Margin="0,8,0,0">
+                        <Grid Margin="2,0,2,0">
+                            <TextBlock Text="坐标" Style="{StaticResource Focal.MicroText}" />
+                            <TextBlock x:Name="ReadoutPosition" HorizontalAlignment="Right"
+                                       Style="{StaticResource Focal.DataCaptionText}" />
+                        </Grid>
+                        <Grid Margin="2,3,2,0">
+                            <TextBlock Text="选区" Style="{StaticResource Focal.MicroText}" />
+                            <TextBlock x:Name="ReadoutSelection" HorizontalAlignment="Right"
+                                       Style="{StaticResource Focal.DataCaptionText}" />
+                        </Grid>
+                        <Grid Margin="2,3,2,0">
+                            <TextBlock Text="色值" Style="{StaticResource Focal.MicroText}" />
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Border x:Name="ReadoutSwatch" Width="10" Height="10" CornerRadius="2"
+                                        BorderBrush="{StaticResource Focal.HairlineDarkStrongBrush}" BorderThickness="1"
+                                        VerticalAlignment="Center" Margin="0,0,5,0" />
+                                <TextBlock x:Name="ReadoutColor" Style="{StaticResource Focal.DataCaptionText}" />
+                            </StackPanel>
+                        </Grid>
+                        <Grid Margin="2,3,2,0">
+                            <TextBlock Text="缩放" Style="{StaticResource Focal.MicroText}" />
+                            <TextBlock x:Name="ReadoutZoom" HorizontalAlignment="Right"
+                                       Style="{StaticResource Focal.DataCaptionText}" />
+                        </Grid>
+                    </StackPanel>
+                </StackPanel>
             </Border>
         </Canvas>
 
-        <!-- 操作提示 -->
-        <Border HorizontalAlignment="Center"
+        <!-- 顶部提示条：一次性把全部键位说清楚（键位来自当前绑定，不是写死的默认值） -->
+        <Border x:Name="HintBar"
+                HorizontalAlignment="Center"
                 VerticalAlignment="Top"
-                Margin="0,20,0,0"
-                Background="#CC1B1B1B"
-                BorderBrush="#443B9CFF"
+                Margin="0,24,0,0"
+                Height="{StaticResource Focal.HintbarHeight}"
+                Background="{StaticResource Focal.HintSurfaceBrush}"
+                BorderBrush="{StaticResource Focal.HairlineDarkBrush}"
                 BorderThickness="1"
-                CornerRadius="4"
-                Padding="12,6"
+                CornerRadius="{StaticResource Focal.RadiusPanel}"
+                Padding="12,0,12,0"
                 IsHitTestVisible="False">
-            <TextBlock Foreground="#FFDCDCDC"
-                       FontFamily="Microsoft YaHei UI"
-                       FontSize="12"
-                       Text="拖动框选　·　单击选中高亮元素　·　Tab 切元素　·　方向键微调　·　Ctrl+方向键改边界　·　T 标注　·　C 取色　·　Enter 确认　·　F3 贴图　·　Esc 取消" />
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <theme:FocalIcon Icon="info" Size="14" Foreground="{StaticResource Focal.AccentBrush}" />
+                <TextBlock Text="拖动框选" Margin="8,0,0,0" Style="{StaticResource Focal.CaptionText}"
+                           VerticalAlignment="Center" />
+                <TextBlock Text="·" Margin="8,0,8,0" Style="{StaticResource Focal.CaptionText}"
+                           Foreground="{StaticResource Focal.OnDarkFaintBrush}" VerticalAlignment="Center" />
+                <TextBlock Text="单击选中元素" Style="{StaticResource Focal.CaptionText}" VerticalAlignment="Center" />
+                <StackPanel Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Center">
+                    <Border Style="{StaticResource Focal.Kbd}">
+                        <TextBlock x:Name="HintTabKey" Style="{StaticResource Focal.KbdText}" />
+                    </Border>
+                    <TextBlock Text="切换" Margin="4,0,0,0" Style="{StaticResource Focal.CaptionText}"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+                <TextBlock Text="·" Margin="8,0,8,0" Style="{StaticResource Focal.CaptionText}"
+                           Foreground="{StaticResource Focal.OnDarkFaintBrush}" VerticalAlignment="Center" />
+                <TextBlock Text="方向键微调" Style="{StaticResource Focal.CaptionText}" VerticalAlignment="Center" />
+                <TextBlock Text="·" Margin="8,0,8,0" Style="{StaticResource Focal.CaptionText}"
+                           Foreground="{StaticResource Focal.OnDarkFaintBrush}" VerticalAlignment="Center" />
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border Style="{StaticResource Focal.Kbd}">
+                        <TextBlock x:Name="HintEnterKey" Style="{StaticResource Focal.KbdText}" />
+                    </Border>
+                    <TextBlock Text="确认" Margin="4,0,0,0" Style="{StaticResource Focal.CaptionText}"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Center">
+                    <Border Style="{StaticResource Focal.Kbd}">
+                        <TextBlock x:Name="HintPinKey" Style="{StaticResource Focal.KbdText}" />
+                    </Border>
+                    <TextBlock Text="贴图" Margin="4,0,0,0" Style="{StaticResource Focal.CaptionText}"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Center">
+                    <Border Style="{StaticResource Focal.Kbd}">
+                        <TextBlock x:Name="HintCancelKey" Style="{StaticResource Focal.KbdText}" />
+                    </Border>
+                    <TextBlock Text="取消" Margin="4,0,0,0" Style="{StaticResource Focal.CaptionText}"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- 浮动工具条：遮罩上唯一的操作面（模式组 → 标注 → 动作组 → 结束组）
+             浮在不可控内容之上 → 允许 L1 阴影（Focal.ChromeSurface 的 Effect） -->
+        <Border x:Name="ToolbarBar"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Bottom"
+                Margin="0,0,0,24"
+                Height="{StaticResource Focal.FloatbarHeight}"
+                Background="{StaticResource Focal.ToolbarSurfaceBrush}"
+                BorderBrush="{StaticResource Focal.HairlineDarkStrongBrush}"
+                BorderThickness="1"
+                CornerRadius="{StaticResource Focal.RadiusPanel}"
+                Padding="8,0,8,0"
+                Effect="{StaticResource Focal.ShadowChrome}">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <!-- 模式组（互斥）：区域 / 元素 / 取色 -->
+                <ToggleButton x:Name="ToolRegion" Style="{StaticResource Focal.ToolWide}"
+                              IsChecked="True" Focusable="False" Click="ToolRegion_Click"
+                              ToolTip="区域框选（拖动决定边界）">
+                    <StackPanel Orientation="Horizontal">
+                        <theme:FocalIcon Icon="crop" Size="16" />
+                        <TextBlock Text="区域" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </ToggleButton>
+                <ToggleButton x:Name="ToolElement" Style="{StaticResource Focal.ToolWide}"
+                              Focusable="False" Click="ToolElement_Click"
+                              ToolTip="元素检测：单击选中光标下的界面元素，Tab 切换候选">
+                    <StackPanel Orientation="Horizontal">
+                        <theme:FocalIcon Icon="pointer" Size="16" />
+                        <TextBlock Text="元素" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </ToggleButton>
+                <ToggleButton x:Name="ToolColor" Style="{StaticResource Focal.ToolWide}"
+                              Focusable="False" Click="ToolColor_Click"
+                              ToolTip="取色：单击取走光标下的像素颜色并复制">
+                    <StackPanel Orientation="Horizontal">
+                        <theme:FocalIcon Icon="eyedropper" Size="16" />
+                        <TextBlock Text="取色" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </ToggleButton>
+
+                <Rectangle Style="{StaticResource Focal.DividerV}" Height="22" />
+
+                <ToggleButton x:Name="ToolAnnotate" Style="{StaticResource Focal.ToolWide}"
+                              Focusable="False" Click="ToolAnnotate_Click"
+                              ToolTip="把当前选区送进标注编辑器">
+                    <StackPanel Orientation="Horizontal">
+                        <theme:FocalIcon Icon="pencil" Size="16" />
+                        <TextBlock Text="标注" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </ToggleButton>
+
+                <Rectangle Style="{StaticResource Focal.DividerV}" Height="22" />
+
+                <Button x:Name="ActionCopy" Style="{StaticResource Focal.Button.Quiet}"
+                        Focusable="False" Click="ActionCopy_Click" ToolTip="复制到剪贴板并结束">
+                    <StackPanel Orientation="Horizontal">
+                        <theme:FocalIcon Icon="copy" Size="16" />
+                        <TextBlock Text="复制" Margin="6,0,6,0" VerticalAlignment="Center" />
+                        <Border Style="{StaticResource Focal.Kbd}">
+                            <TextBlock x:Name="ActionCopyKey" Style="{StaticResource Focal.KbdText}" />
+                        </Border>
+                    </StackPanel>
+                </Button>
+                <Button x:Name="ActionSave" Style="{StaticResource Focal.Button.Quiet}"
+                        Focusable="False" Click="ActionSave_Click" ToolTip="保存到文件并结束">
+                    <StackPanel Orientation="Horizontal">
+                        <theme:FocalIcon Icon="save" Size="16" />
+                        <TextBlock Text="保存" Margin="6,0,6,0" VerticalAlignment="Center" />
+                        <Border Style="{StaticResource Focal.Kbd}">
+                            <TextBlock x:Name="ActionSaveKey" Style="{StaticResource Focal.KbdText}" />
+                        </Border>
+                    </StackPanel>
+                </Button>
+                <Button x:Name="ActionPin" Style="{StaticResource Focal.Button.Quiet}"
+                        Focusable="False" Click="ActionPin_Click" ToolTip="直接贴到屏幕上">
+                    <StackPanel Orientation="Horizontal">
+                        <theme:FocalIcon Icon="pin" Size="16" />
+                        <TextBlock Text="贴图" Margin="6,0,6,0" VerticalAlignment="Center" />
+                        <Border Style="{StaticResource Focal.Kbd}">
+                            <TextBlock x:Name="ActionPinKey" Style="{StaticResource Focal.KbdText}" />
+                        </Border>
+                    </StackPanel>
+                </Button>
+
+                <Rectangle Style="{StaticResource Focal.DividerV}" Height="22" />
+
+                <Button x:Name="ActionCancel" Style="{StaticResource Focal.Button.Quiet}"
+                        Focusable="False" Click="ActionCancel_Click" ToolTip="放弃这次截图">
+                    <StackPanel Orientation="Horizontal">
+                        <theme:FocalIcon Icon="x" Size="16" />
+                        <TextBlock Text="取消" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Button x:Name="ActionConfirm" Style="{StaticResource Focal.Button.Primary}"
+                        Focusable="False" Click="ActionConfirm_Click" Margin="6,0,0,0"
+                        ToolTip="按设置执行（复制 / 保存 / 贴图）">
+                    <StackPanel Orientation="Horizontal">
+                        <theme:FocalIcon Icon="check" Size="16" />
+                        <TextBlock Text="完成" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
         </Border>
 
     </Grid>

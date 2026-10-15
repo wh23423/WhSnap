@@ -1,0 +1,389 @@
+<!--
+  WhSnap · Focal Design Language v1.0 · WPF 资源字典
+  ===========================================================================
+  键名与 tokens.css 的变量一一对应（连字符转驼峰）：
+      obsidian-900  ->  Obsidian900Color / Obsidian900Brush
+      h-control     ->  ControlHeight
+      r-control     ->  RadiusControl
+  界面 XAML 里不允许出现字面量色值，只允许 {StaticResource Focal.*}。
+  目前本文件是交付物，尚未并入 App.xaml；接入方式见 design/focal/README.md。
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+
+  <!-- ══════════════ 颜色 ══════════════ -->
+  <!-- Obsidian：暗色机壳 -->
+  <Color x:Key="Focal.VoidColor">#FF08090A</Color>
+  <Color x:Key="Focal.Obsidian900Color">#FF101114</Color>
+  <Color x:Key="Focal.Obsidian800Color">#FF16181C</Color>
+  <Color x:Key="Focal.Obsidian700Color">#FF1E2126</Color>
+  <Color x:Key="Focal.Obsidian600Color">#FF2A2E35</Color>
+
+  <!-- Paper：纸色阅读面 -->
+  <Color x:Key="Focal.PaperColor">#FFFFFFFF</Color>
+  <Color x:Key="Focal.LinenColor">#FFF4F4F2</Color>
+  <Color x:Key="Focal.LinenDeepColor">#FFE9E9E5</Color>
+
+  <!-- 文字 -->
+  <Color x:Key="Focal.InkColor">#FF14161A</Color>
+  <Color x:Key="Focal.InkMutedColor">#FF5B6169</Color>
+  <Color x:Key="Focal.InkFaintColor">#FF8A9098</Color>
+  <Color x:Key="Focal.OnDarkColor">#FFF2F3F5</Color>
+  <Color x:Key="Focal.OnDarkMutedColor">#FFA9AEB6</Color>
+  <Color x:Key="Focal.OnDarkFaintColor">#FF767C85</Color>
+
+  <!-- 强调：一族四档 -->
+  <Color x:Key="Focal.AccentColor">#FFF5A524</Color>
+  <Color x:Key="Focal.AccentHoverColor">#FFFFBB4A</Color>
+  <Color x:Key="Focal.AccentPressColor">#FFD98E15</Color>
+  <Color x:Key="Focal.AccentDeepColor">#FF8A5A0A</Color>
+  <Color x:Key="Focal.AccentInkColor">#FF1A1206</Color>
+
+  <!-- 语义（只出现在状态面） -->
+  <Color x:Key="Focal.SignalOkColor">#FF2FB27C</Color>
+  <Color x:Key="Focal.SignalWarnColor">#FFF5A524</Color>
+  <Color x:Key="Focal.SignalDangerColor">#FFE5484D</Color>
+
+  <!-- 量测标记（遮罩 / 标注） -->
+  <Color x:Key="Focal.MeasureElementColor">#FF57C7FF</Color>
+  <Color x:Key="Focal.MeasureCenterColor">#FFFFD34D</Color>
+
+  <!-- ══════════════ 画刷 ══════════════ -->
+  <SolidColorBrush x:Key="Focal.VoidBrush" Color="{StaticResource Focal.VoidColor}"/>
+  <SolidColorBrush x:Key="Focal.Obsidian900Brush" Color="{StaticResource Focal.Obsidian900Color}"/>
+  <SolidColorBrush x:Key="Focal.Obsidian800Brush" Color="{StaticResource Focal.Obsidian800Color}"/>
+  <SolidColorBrush x:Key="Focal.Obsidian700Brush" Color="{StaticResource Focal.Obsidian700Color}"/>
+  <SolidColorBrush x:Key="Focal.Obsidian600Brush" Color="{StaticResource Focal.Obsidian600Color}"/>
+  <SolidColorBrush x:Key="Focal.PaperBrush" Color="{StaticResource Focal.PaperColor}"/>
+  <SolidColorBrush x:Key="Focal.LinenBrush" Color="{StaticResource Focal.LinenColor}"/>
+  <SolidColorBrush x:Key="Focal.LinenDeepBrush" Color="{StaticResource Focal.LinenDeepColor}"/>
+
+  <SolidColorBrush x:Key="Focal.InkBrush" Color="{StaticResource Focal.InkColor}"/>
+  <SolidColorBrush x:Key="Focal.InkMutedBrush" Color="{StaticResource Focal.InkMutedColor}"/>
+  <SolidColorBrush x:Key="Focal.InkFaintBrush" Color="{StaticResource Focal.InkFaintColor}"/>
+  <SolidColorBrush x:Key="Focal.OnDarkBrush" Color="{StaticResource Focal.OnDarkColor}"/>
+  <SolidColorBrush x:Key="Focal.OnDarkMutedBrush" Color="{StaticResource Focal.OnDarkMutedColor}"/>
+  <SolidColorBrush x:Key="Focal.OnDarkFaintBrush" Color="{StaticResource Focal.OnDarkFaintColor}"/>
+
+  <SolidColorBrush x:Key="Focal.AccentBrush" Color="{StaticResource Focal.AccentColor}"/>
+  <SolidColorBrush x:Key="Focal.AccentHoverBrush" Color="{StaticResource Focal.AccentHoverColor}"/>
+  <SolidColorBrush x:Key="Focal.AccentPressBrush" Color="{StaticResource Focal.AccentPressColor}"/>
+  <SolidColorBrush x:Key="Focal.AccentDeepBrush" Color="{StaticResource Focal.AccentDeepColor}"/>
+  <SolidColorBrush x:Key="Focal.AccentInkBrush" Color="{StaticResource Focal.AccentInkColor}"/>
+
+  <SolidColorBrush x:Key="Focal.SignalOkBrush" Color="{StaticResource Focal.SignalOkColor}"/>
+  <SolidColorBrush x:Key="Focal.SignalWarnBrush" Color="{StaticResource Focal.SignalWarnColor}"/>
+  <SolidColorBrush x:Key="Focal.SignalDangerBrush" Color="{StaticResource Focal.SignalDangerColor}"/>
+  <SolidColorBrush x:Key="Focal.MeasureElementBrush" Color="{StaticResource Focal.MeasureElementColor}"/>
+  <SolidColorBrush x:Key="Focal.MeasureCenterBrush" Color="{StaticResource Focal.MeasureCenterColor}"/>
+
+  <!-- 发丝线：暗底用白色低透明度，浅底用墨色低透明度 -->
+  <SolidColorBrush x:Key="Focal.HairlineDarkBrush" Color="#14FFFFFF"/>
+  <SolidColorBrush x:Key="Focal.HairlineDarkStrongBrush" Color="#24FFFFFF"/>
+  <SolidColorBrush x:Key="Focal.HairlineLightBrush" Color="#1A14161A"/>
+  <SolidColorBrush x:Key="Focal.InnerTopLightBrush" Color="#0FFFFFFF"/>
+  <SolidColorBrush x:Key="Focal.AccentTintBrush" Color="#24F5A524"/>
+  <SolidColorBrush x:Key="Focal.ScrimBrush" Color="#73000000"/>
+
+  <!-- ══════════════ 字体 ══════════════ -->
+  <FontFamily x:Key="Focal.DisplayFont">Segoe UI Variable Display, Segoe UI, Microsoft YaHei UI</FontFamily>
+  <FontFamily x:Key="Focal.TextFont">Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI</FontFamily>
+  <FontFamily x:Key="Focal.DataFont">Cascadia Code, Cascadia Mono, Consolas, Microsoft YaHei UI</FontFamily>
+
+  <sys:Double x:Key="Focal.DisplaySize">28</sys:Double>
+  <sys:Double x:Key="Focal.TitleSize">20</sys:Double>
+  <sys:Double x:Key="Focal.SubtitleSize">15</sys:Double>
+  <sys:Double x:Key="Focal.BodySize">14</sys:Double>
+  <sys:Double x:Key="Focal.CaptionSize">12</sys:Double>
+  <sys:Double x:Key="Focal.MicroSize">11</sys:Double>
+  <sys:Double x:Key="Focal.DataSize">13</sys:Double>
+  <sys:Double x:Key="Focal.DataLargeSize">20</sys:Double>
+  <sys:Double x:Key="Focal.KbdSize">11</sys:Double>
+
+  <!-- ══════════════ 圆角 / 度量 ══════════════ -->
+  <CornerRadius x:Key="Focal.RadiusHair">2</CornerRadius>
+  <CornerRadius x:Key="Focal.RadiusControl">6</CornerRadius>
+  <CornerRadius x:Key="Focal.RadiusCard">10</CornerRadius>
+  <CornerRadius x:Key="Focal.RadiusPanel">14</CornerRadius>
+  <CornerRadius x:Key="Focal.RadiusFull">9999</CornerRadius>
+
+  <sys:Double x:Key="Focal.ControlHeight">30</sys:Double>
+  <sys:Double x:Key="Focal.ControlHeightLarge">34</sys:Double>
+  <sys:Double x:Key="Focal.RowHeight">32</sys:Double>
+  <sys:Double x:Key="Focal.RowHeightLarge">40</sys:Double>
+  <sys:Double x:Key="Focal.ToolbarHeight">40</sys:Double>
+  <sys:Double x:Key="Focal.TitleBarHeight">32</sys:Double>
+  <Thickness x:Key="Focal.RowPadding">18,10,18,10</Thickness>
+  <Thickness x:Key="Focal.ButtonPadding">12,0,12,0</Thickness>
+  <Thickness x:Key="Focal.PanelPadding">16</Thickness>
+
+  <!-- ══════════════ 层级 ══════════════ -->
+  <!-- L1 机壳：只给浮在不可控内容之上的面（遮罩工具条 / 放大镜 / 菜单） -->
+  <DropShadowEffect x:Key="Focal.ShadowChrome" BlurRadius="30" ShadowDepth="5" Direction="270" Opacity="0.55" Color="#000000"/>
+  <!-- L2 对话框：纸色面上的模态 -->
+  <DropShadowEffect x:Key="Focal.ShadowDialog" BlurRadius="48" ShadowDepth="8" Direction="270" Opacity="0.18" Color="#101216"/>
+  <!-- 产品影像落在表面上时的唯一投影（贴图窗口的内容层） -->
+  <DropShadowEffect x:Key="Focal.ShadowProduct" BlurRadius="30" ShadowDepth="5" Direction="270" Opacity="0.22" Color="#000000"/>
+
+  <!-- ══════════════ 文本样式 ══════════════ -->
+  <Style x:Key="Focal.DisplayText" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource Focal.DisplayFont}"/>
+    <Setter Property="FontSize" Value="{StaticResource Focal.DisplaySize}"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkBrush}"/>
+    <Setter Property="TextOptions.TextFormattingMode" Value="Ideal"/>
+  </Style>
+
+  <Style x:Key="Focal.TitleText" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource Focal.DisplayFont}"/>
+    <Setter Property="FontSize" Value="{StaticResource Focal.TitleSize}"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkBrush}"/>
+  </Style>
+
+  <Style x:Key="Focal.BodyText" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource Focal.TextFont}"/>
+    <Setter Property="FontSize" Value="{StaticResource Focal.BodySize}"/>
+    <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkBrush}"/>
+    <Setter Property="TextWrapping" Value="Wrap"/>
+    <Setter Property="LineHeight" Value="21"/>
+  </Style>
+
+  <Style x:Key="Focal.CaptionText" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource Focal.TextFont}"/>
+    <Setter Property="FontSize" Value="{StaticResource Focal.CaptionSize}"/>
+    <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkMutedBrush}"/>
+    <Setter Property="TextWrapping" Value="Wrap"/>
+  </Style>
+
+  <!-- 小号大写标签：正字距 -->
+  <Style x:Key="Focal.MicroText" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource Focal.TextFont}"/>
+    <Setter Property="FontSize" Value="{StaticResource Focal.MicroSize}"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkFaintBrush}"/>
+  </Style>
+
+  <!-- 数据：等宽 + 表格数字（WPF 用 Typography.NumeralAlignment 对齐数字宽度） -->
+  <Style x:Key="Focal.DataText" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource Focal.DataFont}"/>
+    <Setter Property="FontSize" Value="{StaticResource Focal.DataSize}"/>
+    <Setter Property="FontWeight" Value="Medium"/>
+    <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkBrush}"/>
+    <Setter Property="Typography.NumeralAlignment" Value="Tabular"/>
+  </Style>
+
+  <!-- ══════════════ 按钮 ══════════════ -->
+  <!-- 主按钮：唯一"决定性动作"，琥珀填充 + 墨字。CTA 不用胶囊，圆角 6。 -->
+  <Style x:Key="Focal.Button.Primary" TargetType="Button">
+    <Setter Property="Height" Value="{StaticResource Focal.ControlHeight}"/>
+    <Setter Property="Padding" Value="{StaticResource Focal.ButtonPadding}"/>
+    <Setter Property="FontFamily" Value="{StaticResource Focal.TextFont}"/>
+    <Setter Property="FontSize" Value="{StaticResource Focal.BodySize}"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Foreground" Value="{StaticResource Focal.AccentInkBrush}"/>
+    <Setter Property="Cursor" Value="Hand"/>
+    <Setter Property="SnapsToDevicePixels" Value="True"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="Bd"
+                  Background="{StaticResource Focal.AccentBrush}"
+                  CornerRadius="{StaticResource Focal.RadiusControl}"
+                  SnapsToDevicePixels="True">
+            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                              Margin="{TemplateBinding Padding}"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Bd" Property="Background" Value="{StaticResource Focal.AccentHoverBrush}"/>
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+              <Setter TargetName="Bd" Property="Background" Value="{StaticResource Focal.AccentPressBrush}"/>
+              <!-- 按下 = 下沉 1px，不缩放 -->
+              <Setter TargetName="Bd" Property="RenderTransform">
+                <Setter.Value><TranslateTransform Y="1"/></Setter.Value>
+              </Setter>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter TargetName="Bd" Property="Background" Value="Transparent"/>
+              <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Focal.HairlineDarkBrush}"/>
+              <Setter TargetName="Bd" Property="BorderThickness" Value="1"/>
+              <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkFaintBrush}"/>
+            </Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Focal.AccentHoverBrush}"/>
+              <Setter TargetName="Bd" Property="BorderThickness" Value="2"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- 次按钮：暗块 + 发丝线，零阴影 -->
+  <Style x:Key="Focal.Button.Secondary" TargetType="Button">
+    <Setter Property="Height" Value="{StaticResource Focal.ControlHeight}"/>
+    <Setter Property="Padding" Value="{StaticResource Focal.ButtonPadding}"/>
+    <Setter Property="FontFamily" Value="{StaticResource Focal.TextFont}"/>
+    <Setter Property="FontSize" Value="{StaticResource Focal.BodySize}"/>
+    <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkBrush}"/>
+    <Setter Property="Cursor" Value="Hand"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="Bd"
+                  Background="{StaticResource Focal.Obsidian700Brush}"
+                  BorderBrush="{StaticResource Focal.HairlineDarkBrush}"
+                  BorderThickness="1"
+                  CornerRadius="{StaticResource Focal.RadiusControl}"
+                  SnapsToDevicePixels="True">
+            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                              Margin="{TemplateBinding Padding}"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Bd" Property="Background" Value="{StaticResource Focal.Obsidian600Brush}"/>
+              <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Focal.HairlineDarkStrongBrush}"/>
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+              <Setter TargetName="Bd" Property="RenderTransform">
+                <Setter.Value><TranslateTransform Y="1"/></Setter.Value>
+              </Setter>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkFaintBrush}"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- 安静按钮 / 危险按钮：只有前景色不同 -->
+  <Style x:Key="Focal.Button.Quiet" TargetType="Button" BasedOn="{StaticResource Focal.Button.Secondary}">
+    <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkMutedBrush}"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="Bd" Background="Transparent" CornerRadius="{StaticResource Focal.RadiusControl}">
+            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Bd" Property="Background" Value="{StaticResource Focal.Obsidian700Brush}"/>
+              <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkBrush}"/>
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+              <Setter TargetName="Bd" Property="RenderTransform">
+                <Setter.Value><TranslateTransform Y="1"/></Setter.Value>
+              </Setter>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <Style x:Key="Focal.Button.Danger" TargetType="Button" BasedOn="{StaticResource Focal.Button.Secondary}">
+    <Setter Property="Foreground" Value="{StaticResource Focal.SignalDangerBrush}"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="Bd" Background="Transparent"
+                  BorderBrush="{StaticResource Focal.HairlineDarkStrongBrush}" BorderThickness="1"
+                  CornerRadius="{StaticResource Focal.RadiusControl}">
+            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Bd" Property="Background" Value="#1FE5484D"/>
+              <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Focal.SignalDangerBrush}"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- 工具键：30×30，选中 = 琥珀填充 + 墨色图标 -->
+  <Style x:Key="Focal.Button.Tool" TargetType="ToggleButton">
+    <Setter Property="Width" Value="30"/>
+    <Setter Property="Height" Value="30"/>
+    <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkMutedBrush}"/>
+    <Setter Property="Cursor" Value="Hand"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ToggleButton">
+          <Border x:Name="Bd" Background="Transparent" CornerRadius="{StaticResource Focal.RadiusControl}">
+            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Bd" Property="Background" Value="{StaticResource Focal.Obsidian700Brush}"/>
+              <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkBrush}"/>
+            </Trigger>
+            <Trigger Property="IsChecked" Value="True">
+              <Setter TargetName="Bd" Property="Background" Value="{StaticResource Focal.AccentBrush}"/>
+              <Setter Property="Foreground" Value="{StaticResource Focal.AccentInkBrush}"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- 开关：34×18 凹槽 + 12 圆点 -->
+  <Style x:Key="Focal.Switch" TargetType="ToggleButton">
+    <Setter Property="Width" Value="34"/>
+    <Setter Property="Height" Value="18"/>
+    <Setter Property="Cursor" Value="Hand"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ToggleButton">
+          <Grid>
+            <Border x:Name="Track"
+                    Background="{StaticResource Focal.Obsidian600Brush}"
+                    BorderBrush="{StaticResource Focal.HairlineDarkStrongBrush}"
+                    BorderThickness="1"
+                    CornerRadius="{StaticResource Focal.RadiusFull}"/>
+            <Ellipse x:Name="Thumb" Width="12" Height="12"
+                     Fill="{StaticResource Focal.OnDarkMutedBrush}"
+                     HorizontalAlignment="Left" Margin="2,0,0,0"/>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsChecked" Value="True">
+              <Setter TargetName="Track" Property="Background" Value="{StaticResource Focal.AccentBrush}"/>
+              <Setter TargetName="Track" Property="BorderBrush" Value="Transparent"/>
+              <Setter TargetName="Thumb" Property="Fill" Value="{StaticResource Focal.AccentInkBrush}"/>
+              <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right"/>
+              <Setter TargetName="Thumb" Property="Margin" Value="0,0,2,0"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- 键帽：20 高，底部 2px 模拟可按下的实体 -->
+  <Style x:Key="Focal.Kbd" TargetType="Border">
+    <Setter Property="Height" Value="20"/>
+    <Setter Property="MinWidth" Value="20"/>
+    <Setter Property="Padding" Value="5,0"/>
+    <Setter Property="Background" Value="{StaticResource Focal.Obsidian700Brush}"/>
+    <Setter Property="BorderBrush" Value="{StaticResource Focal.HairlineDarkStrongBrush}"/>
+    <Setter Property="BorderThickness" Value="1,1,1,2"/>
+    <Setter Property="CornerRadius" Value="4"/>
+  </Style>
+
+  <!-- L1 机壳：浮在不可控内容之上的面 -->
+  <Style x:Key="Focal.ChromeSurface" TargetType="Border">
+    <Setter Property="Background" Value="{StaticResource Focal.Obsidian800Brush}"/>
+    <Setter Property="BorderBrush" Value="{StaticResource Focal.HairlineDarkStrongBrush}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="CornerRadius" Value="{StaticResource Focal.RadiusPanel}"/>
+    <Setter Property="Effect" Value="{StaticResource Focal.ShadowChrome}"/>
+  </Style>
+
+</ResourceDictionary>
