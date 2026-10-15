@@ -38,12 +38,14 @@ internal static class OverlayTestCommand
 
             BitmapSource? cropped = null;
             PhysicalRect confirmedRect = default;
+            OverlayConfirmAction confirmedAction = OverlayConfirmAction.Default;
             bool cancelled = false;
 
-            session.Confirmed += (image, rect) =>
+            session.Confirmed += (image, rect, action) =>
             {
                 cropped = image;
                 confirmedRect = rect;
+                confirmedAction = action;
             };
             session.Cancelled += () => cancelled = true;
 
@@ -206,6 +208,36 @@ internal static class OverlayTestCommand
         }
 
         log.AppendLine($"合成双屏（1280x1024@100% + 1920x1024@150%）：窗口 2 个，跨屏选区 {selection}，双屏渲染与放大镜换算均无异常");
+
+        // 顺带验证"确认动作直达"的键位映射：F3 = 只贴图
+        OverlayConfirmAction action = OverlayConfirmAction.Default;
+        bool confirmed = false;
+        session.Confirmed += (image, rect, kind) =>
+        {
+            action = kind;
+            confirmed = true;
+            if (image.PixelWidth != rect.Width || image.PixelHeight != rect.Height)
+            {
+                throw new InvalidOperationException($"合成会话裁剪尺寸 {image.PixelWidth}x{image.PixelHeight} 与选区 {rect} 不一致。");
+            }
+        };
+
+        if (!session.HandleKey(Key.F3, ModifierKeys.None))
+        {
+            throw new InvalidOperationException("F3 未被遮罩会话识别。");
+        }
+
+        if (!confirmed || action != OverlayConfirmAction.PinOnly)
+        {
+            throw new InvalidOperationException($"F3 未映射到「只贴图」：confirmed={confirmed}, action={action}。");
+        }
+
+        if (!session.HandleKey(Key.C, ModifierKeys.Control))
+        {
+            throw new InvalidOperationException("Ctrl+C 未被遮罩会话识别。");
+        }
+
+        log.AppendLine("确认动作直达键位：F3 → 只贴图（已验证），Ctrl+C → 只复制（已识别，会话已结束不再重复确认）");
 
         try
         {

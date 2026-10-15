@@ -4,6 +4,7 @@ using System.Threading;
 using WhSnap.Capture;
 using WhSnap.Core;
 using WhSnap.Diagnostics;
+using WhSnap.Pin;
 using WhSnap.Services;
 using WhSnap.Tray;
 
@@ -16,6 +17,10 @@ public partial class App : System.Windows.Application
     private HotkeyService? _hotkeys;
     private CaptureController? _capture;
     private SettingsService? _settings;
+    private PinManager? _pins;
+    private PinPanelWindow? _pinPanel;
+    private TopologyWatcher? _topology;
+    private ClipboardWatcher? _clipboard;
 
     protected override void OnStartup(System.Windows.StartupEventArgs e)
     {
@@ -30,6 +35,12 @@ public partial class App : System.Windows.Application
         if (e.Args.Any(a => a.Equals("--overlay-test", StringComparison.OrdinalIgnoreCase)))
         {
             Shutdown(Diagnostics.OverlayTestCommand.Run());
+            return;
+        }
+
+        if (e.Args.Any(a => a.Equals("--pin-test", StringComparison.OrdinalIgnoreCase)))
+        {
+            Shutdown(Diagnostics.PinTestCommand.Run());
             return;
         }
 
@@ -65,16 +76,62 @@ public partial class App : System.Windows.Application
         _hotkeys = new HotkeyService();
         _hotkeys.Pressed += OnCaptureRequested;
 
-        _capture = new CaptureController(_settings);
-        _capture.StatusReported += OnStatusReported;
-
         _tray = new TrayHost(_settings.Current.Hotkey, AutoStartService.IsEnabled());
         _tray.CaptureRequested += OnCaptureRequested;
         _tray.ExitRequested += OnExitRequested;
         _tray.AutoStartToggled += OnAutoStartToggled;
+        _tray.ClipboardPinRequested += OnClipboardPinRequested;
+        _tray.ManagePinsRequested += ShowPinPanel;
+        _tray.ShowAllPinsRequested += () => _pins?.ShowAll();
+        _tray.HideAllPinsRequested += () => _pins?.HideAll();
+        _tray.CloseAllPinsRequested += () => _pins?.CloseAll();
         _tray.OpenSaveFolderRequested += () => OpenFolder(SaveService.ResolveDirectory(_settings.Current), "保存目录");
         _tray.OpenConfigFolderRequested += () => OpenFolder(SettingsService.ConfigDirectory, "配置目录");
+        _tray.OpenPinBackupFolderRequested += () => OpenFolder(_pins?.BackupStore.Root ?? SettingsService.ConfigDirectory, "贴图备份目录");
         _tray.AboutRequested += ShowAbout;
+
+        // 贴图（M2）：先建管家并恢复上次的贴图，再挂监听
+        _pins = new PinManager(_settings);
+        _pins.StatusReported += OnStatusReported;
+        _pins.PinsChanged += UpdateTrayPinState;
+        _pins.AnnotationRequested += OnPinAnnotationRequested;
+        _pins.Initialize();
+
+        _capture = new CaptureController(_settings);
+        _capture.StatusReported += OnStatusReported;
+        _capture.PinRequested = image =>
+        {
+            try
+            {
+                _pins?.CreatePin(image);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("截图确认后创建贴图失败", ex);
+                return false;
+            }
+        };
+
+        _topology = new TopologyWatcher();
+        _topology.TopologyChanged += () =>
+        {
+            try
+            {
+                _pins?.UpdateTopology();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("拓扑变化后重算贴图失败", ex);
+            }
+        };
+        _topology.Start();
+
+        _clipboard = new ClipboardWatcher();
+        _clipboard.ClipboardChanged += OnClipboardChanged;
+        ApplyClipboardWatcher();
+
+        UpdateTrayPinState();
 
         ApplyHotkey(_settings.Current.Hotkey);
         EnsureAutoStartState();
@@ -86,12 +143,16 @@ public partial class App : System.Windows.Application
         else
         {
             string hotkey = _hotkeys.Current?.ToString() ?? _settings.Current.Hotkey;
-            _tray.ShowBalloon("WhSnap 已启动", $"按 {hotkey} 开始截图，或双击托盘图标。");
+            _tray.ShowBalloon("WhSnap 已启动", $"按 {hotkey} 开始截图（Enter 确认，F3 直接贴图），或双击托盘图标。");
         }
     }
 
     protected override void OnExit(System.Windows.ExitEventArgs e)
     {
+        _topology?.Dispose();
+        _clipboard?.Dispose();
+        _pins?.Dispose();
+        _pinPanel?.Close();
         _tray?.Dispose();
         _hotkeys?.Dispose();
 
@@ -106,6 +167,90 @@ public partial class App : System.Windows.Application
 
         _instanceMutex?.Dispose();
         base.OnExit(e);
+    }
+
+    private void UpdateTrayPinState() =>
+        _tray?.SyncPinState(_pins?.Count ?? 0, _clipboard?.IsRunning == true);
+
+    private void OnClipboardPinRequested()
+    {
+        try
+        {
+            _pins?.CreatePinsFromClipboard();
+        }
+        catch (Exception ex)
+        {
+            Log.Error("从剪贴板贴图失败", ex);
+            _pins?.ReportStatus($"从剪贴板贴图失败：{ex.Message}", warning: true);
+        }
+    }
+
+    private void OnClipboardChanged()
+    {
+        if (_settings?.Current.ClipboardWatchEnabled != true || _pins is null)
+        {
+            return;
+        }
+
+        // 自己写进剪贴板的内容（截图复制）不该再被贴回来
+        if (DateTime.UtcNow - ClipboardService.LastWriteUtc < TimeSpan.FromSeconds(2))
+        {
+            return;
+        }
+
+        try
+        {
+            _pins.CreatePinsFromClipboard();
+        }
+        catch (Exception ex)
+        {
+            Log.Error("复制即贴图失败", ex);
+        }
+    }
+
+    private void ApplyClipboardWatcher()
+    {
+        if (_clipboard is null)
+        {
+            return;
+        }
+
+        if (_settings?.Current.ClipboardWatchEnabled == true)
+        {
+            _clipboard.Start();
+        }
+        else
+        {
+            _clipboard.Stop();
+        }
+
+        UpdateTrayPinState();
+    }
+
+    private void ShowPinPanel()
+    {
+        if (_pins is null)
+        {
+            return;
+        }
+
+        if (_pinPanel is { IsLoaded: true })
+        {
+            _pinPanel.Activate();
+            return;
+        }
+
+        _pinPanel = new PinPanelWindow(_pins);
+        _pinPanel.Closed += (_, _) => _pinPanel = null;
+        _pinPanel.Show();
+    }
+
+    private void OnPinAnnotationRequested(PinWindow pin)
+    {
+        // M4 之前：贴图内标注还没有引擎，明确告知而不是静默失败（见规划 §7 里程碑）
+        _tray?.ShowBalloon(
+            "贴图内标注",
+            $"已选中贴图 #{pin.ZIndex + 1}。贴图内标注引擎在 M4 提供；当前可先「复制到剪贴板」，或关闭贴图后用截图遮罩继续。");
     }
 
     private void ApplyHotkey(string configured)
@@ -201,7 +346,9 @@ public partial class App : System.Windows.Application
     {
         _tray?.ShowBalloon(
             "关于 WhSnap",
-            "WhSnap 0.1.0-preview.1　对标 Snipaste 的 Windows 截图贴图工具。预览版功能：全局热键截图、选区、复制/保存、开机自启。");
+            "WhSnap 0.2.0-preview　对标 Snipaste 的 Windows 截图贴图工具。"
+            + "当前能力：全局热键截图、多屏遮罩、像素级微调、放大镜、贴图（缩放/旋转/翻转/透明度/穿透/缩略图/备份恢复）、"
+            + "从剪贴板贴图（图像/文件/HTML/颜色/文本）、贴图管理面板。");
     }
 
     private static void OpenFolder(string path, string title)

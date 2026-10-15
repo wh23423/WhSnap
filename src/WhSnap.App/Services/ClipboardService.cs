@@ -14,6 +14,9 @@ internal static class ClipboardService
     // 保持 PNG 流存活：剪贴板延迟渲染期间流不能被回收
     private static MemoryStream? _pngStream;
 
+    /// <summary>最近一次由 WhSnap 自己写入剪贴板的时间（剪贴板监听用它避免"自己写的又贴回来"）。</summary>
+    public static DateTime LastWriteUtc { get; private set; } = DateTime.MinValue;
+
     public static bool TryCopy(BitmapSource image, out string error)
     {
         error = string.Empty;
@@ -23,11 +26,14 @@ internal static class ClipboardService
             try
             {
                 var data = new DataObject();
-                data.SetImage(image);
+
+                // 预乘 alpha 的位图（WPF 渲染结果）不能直接进 DIB/PNG 通道，否则半透明处会发暗
+                var normalized = Services.SaveService.Normalize(image);
+                data.SetImage(normalized);
 
                 var stream = new MemoryStream();
                 var encoder = new PngBitmapEncoder();
-                encoder.Frames.Add(BitmapFrame.Create(image));
+                encoder.Frames.Add(BitmapFrame.Create(normalized));
                 encoder.Save(stream);
                 stream.Position = 0;
 
@@ -35,6 +41,7 @@ internal static class ClipboardService
                 data.SetData("PNG", stream, true);
 
                 Clipboard.SetDataObject(data, true);
+                LastWriteUtc = DateTime.UtcNow;
                 return true;
             }
             catch (COMException ex)

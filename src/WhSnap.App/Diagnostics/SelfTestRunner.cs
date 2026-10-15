@@ -26,7 +26,7 @@ internal static class SelfTestRunner
         var failures = new List<string>();
 
         report.AppendLine($"WhSnap 自检　{DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-        report.AppendLine($"版本 0.1.0-preview.1　进程 {(Environment.Is64BitProcess ? "x64" : "x86")}");
+        report.AppendLine($"版本 0.2.0-preview.1　进程 {(Environment.Is64BitProcess ? "x64" : "x86")}");
         report.AppendLine(new string('-', 68));
 
         void Check(string name, Func<string> body)
@@ -174,7 +174,66 @@ internal static class SelfTestRunner
                 throw new InvalidOperationException("配置文件未生成。");
             }
 
-            return $"{SettingsService.ConfigFilePath}（热键 {original}）";
+            var settings = service.Current;
+            if (settings.SchemaVersion != AppSettings.CurrentSchemaVersion)
+            {
+                throw new InvalidOperationException($"schema 版本应为 {AppSettings.CurrentSchemaVersion}，实际 {settings.SchemaVersion}（迁移未执行）。");
+            }
+
+            return $"{SettingsService.ConfigFilePath}（热键 {original}，schema {settings.SchemaVersion}）";
+        });
+
+        Check("贴图设置项与备份存储", () =>
+        {
+            var service = new SettingsService();
+            service.Load();
+            var settings = service.Current;
+
+            if (settings.PinZoomStep <= 1.0 || settings.PinBackupRetention < 1 || settings.PinBackupIntervalSeconds < 1)
+            {
+                throw new InvalidOperationException(
+                    $"贴图配置项取值异常：zoomStep={settings.PinZoomStep} retention={settings.PinBackupRetention} interval={settings.PinBackupIntervalSeconds}。");
+            }
+
+            if (!ColorValue.TryParse(settings.TextPinBackground, out _) || !ColorValue.TryParse(settings.TextPinForeground, out _))
+            {
+                throw new InvalidOperationException("文本贴图的前景/背景色无法解析。");
+            }
+
+            // 真跑一遍备份存储的落盘与读回（用临时目录，不碰用户数据）
+            string root = Path.Combine(Path.GetTempPath(), "whsnap-selftest-pins-" + Guid.NewGuid().ToString("N")[..8]);
+            try
+            {
+                var store = new Pin.PinBackupStore(root);
+                store.Save([], new PhysicalRect(0, 0, 1920, 1080), retention: 2);
+
+                var loaded = store.LoadLatest();
+                if (loaded is null)
+                {
+                    throw new InvalidOperationException("备份清单写入后读不回来。");
+                }
+
+                if (loaded.Value.Manifest.Pins.Count != 0)
+                {
+                    throw new InvalidOperationException($"空贴图列表应写出 0 条清单，实际 {loaded.Value.Manifest.Pins.Count} 条。");
+                }
+
+                return $"schema {settings.SchemaVersion}；缩放步进 {settings.PinZoomStep:0.##}、备份保留 {settings.PinBackupRetention} 次；备份存储读写正常";
+            }
+            finally
+            {
+                try
+                {
+                    if (Directory.Exists(root))
+                    {
+                        Directory.Delete(root, recursive: true);
+                    }
+                }
+                catch
+                {
+                    // 临时目录清理失败可忽略
+                }
+            }
         });
 
         Check("开机自启状态读取", () =>

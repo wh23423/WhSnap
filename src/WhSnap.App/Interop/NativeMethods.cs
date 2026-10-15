@@ -3,10 +3,11 @@ using System.Runtime.InteropServices;
 namespace WhSnap.Interop;
 
 /// <summary>
-/// 所有 Win32 P/Invoke 集中在此文件。业务代码不直接 DllImport，
+/// 所有 Win32 P/Invoke 集中在此命名空间。业务代码不直接 DllImport，
 /// 便于后续替换实现（例如把采集从 GDI 换成 WGC/DXGI）。
+/// 声明按用途分文件：NativeMethods.cs（通用/采集/热键）、NativeMethods.Pin.cs（分层贴图窗口）。
 /// </summary>
-internal static class NativeMethods
+internal static partial class NativeMethods
 {
     public const int SM_XVIRTUALSCREEN = 76;
     public const int SM_YVIRTUALSCREEN = 77;

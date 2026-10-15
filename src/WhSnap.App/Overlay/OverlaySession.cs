@@ -8,6 +8,22 @@ using WhSnap.Services;
 namespace WhSnap.Overlay;
 
 /// <summary>
+/// 遮罩确认后要执行的动作。对应 §2.1「确认后三选一热键直达」：
+/// Enter 走配置里的默认组合，Ctrl+C / Ctrl+S / F3 可直达单一动作。
+/// </summary>
+internal enum OverlayConfirmAction
+{
+    /// <summary>按设置执行（复制 / 保存 / 贴图各自的开开关）。</summary>
+    Default,
+
+    CopyOnly,
+
+    SaveOnly,
+
+    PinOnly,
+}
+
+/// <summary>
 /// 一次截图会话：为每台显示器创建一个遮罩窗口，共享同一个**虚拟桌面绝对物理坐标**的选区模型。
 ///
 /// 跨屏拖拽的实现方式：按下鼠标的那个窗口捕获鼠标，之后无论光标移动到哪台显示器，
@@ -40,7 +56,7 @@ internal sealed class OverlaySession
         _primary = _windows.FirstOrDefault(w => w.Monitor.Bounds == activeMonitor.Bounds) ?? _windows[0];
     }
 
-    public event Action<BitmapSource, PhysicalRect>? Confirmed;
+    public event Action<BitmapSource, PhysicalRect, OverlayConfirmAction>? Confirmed;
 
     public event Action? Cancelled;
 
@@ -71,7 +87,6 @@ internal sealed class OverlaySession
             Confirm();
             return;
         }
-
         var handle = SelectionModel.HitTest(_selection.Current, absolute, HandleTolerancePx);
 
         switch (handle)
@@ -110,6 +125,8 @@ internal sealed class OverlaySession
     /// <summary>集中处理键盘操作：所有遮罩窗口都会把按键转到这里。</summary>
     internal bool HandleKey(Key key, ModifierKeys modifiers)
     {
+        bool control = modifiers.HasFlag(ModifierKeys.Control);
+
         switch (key)
         {
             case Key.Escape:
@@ -120,13 +137,26 @@ internal sealed class OverlaySession
                 Confirm();
                 return true;
 
+            // 确认动作直达：Ctrl+C 复制、Ctrl+S 保存、F3 贴图（其余走配置）
+            case Key.C when control:
+                Confirm(OverlayConfirmAction.CopyOnly);
+                return true;
+
+            case Key.S when control:
+                Confirm(OverlayConfirmAction.SaveOnly);
+                return true;
+
+            case Key.F3:
+                Confirm(OverlayConfirmAction.PinOnly);
+                return true;
+
             case Key.Left:
             case Key.Right:
             case Key.Up:
             case Key.Down:
             {
                 int step = modifiers.HasFlag(ModifierKeys.Shift) ? 10 : 1;
-                bool resize = modifiers.HasFlag(ModifierKeys.Control);
+                bool resize = control;
                 var direction = key switch
                 {
                     Key.Left => NudgeDirection.Left,
@@ -160,7 +190,9 @@ internal sealed class OverlaySession
         CloseAll();
     }
 
-    public void Confirm()
+    public void Confirm() => Confirm(OverlayConfirmAction.Default);
+
+    public void Confirm(OverlayConfirmAction action)
     {
         if (_resolved || !_selection.HasSelection)
         {
@@ -179,7 +211,7 @@ internal sealed class OverlaySession
         result.Freeze();
 
         _resolved = true;
-        Confirmed?.Invoke(result, rect);
+        Confirmed?.Invoke(result, rect, action);
         CloseAll();
     }
 

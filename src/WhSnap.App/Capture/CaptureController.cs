@@ -6,7 +6,7 @@ using WhSnap.Services;
 namespace WhSnap.Capture;
 
 /// <summary>
-/// 截图会话编排：冻结屏幕 → 选定活动显示器 → 弹遮罩 → 确认后复制/保存。
+/// 截图会话编排：冻结屏幕 → 选定活动显示器 → 弹遮罩 → 确认后按动作复制/保存/贴图。
 /// 同一时刻只允许一个会话（重复按热键不会叠加遮罩）。
 /// </summary>
 internal sealed class CaptureController(SettingsService settings)
@@ -15,6 +15,9 @@ internal sealed class CaptureController(SettingsService settings)
     private OverlaySession? _overlay;
 
     public event Action<string, bool>? StatusReported;
+
+    /// <summary>贴图回调（由 App 注入 <c>PinManager.CreatePin</c>）。返回 false 表示贴图失败。</summary>
+    public Func<BitmapSource, bool>? PinRequested { get; set; }
 
     public bool IsBusy => _overlay is not null;
 
@@ -52,10 +55,10 @@ internal sealed class CaptureController(SettingsService settings)
             var session = new OverlaySession(frame, monitor, _settings.Current);
             _overlay = session;
 
-            session.Confirmed += (image, rect) =>
+            session.Confirmed += (image, rect, action) =>
             {
                 _overlay = null;
-                HandleConfirmed(image, rect);
+                HandleConfirmed(image, rect, action);
             };
 
             session.Cancelled += () =>
@@ -74,11 +77,45 @@ internal sealed class CaptureController(SettingsService settings)
         }
     }
 
-    private void HandleConfirmed(BitmapSource image, PhysicalRect rect)
+    private void HandleConfirmed(BitmapSource image, PhysicalRect rect, OverlayConfirmAction action)
     {
+        bool copy = action switch
+        {
+            OverlayConfirmAction.CopyOnly => true,
+            OverlayConfirmAction.SaveOnly or OverlayConfirmAction.PinOnly => false,
+            _ => _settings.Current.CopyOnCapture,
+        };
+
+        bool save = action switch
+        {
+            OverlayConfirmAction.SaveOnly => true,
+            OverlayConfirmAction.CopyOnly or OverlayConfirmAction.PinOnly => false,
+            _ => _settings.Current.SaveOnCapture,
+        };
+
+        bool pin = action switch
+        {
+            OverlayConfirmAction.PinOnly => true,
+            OverlayConfirmAction.CopyOnly or OverlayConfirmAction.SaveOnly => false,
+            _ => _settings.Current.PinOnCapture,
+        };
+
         var parts = new List<string>();
 
-        if (_settings.Current.CopyOnCapture)
+        if (pin)
+        {
+            if (PinRequested is { } handler && handler(image))
+            {
+                parts.Add("已贴到屏幕");
+            }
+            else
+            {
+                parts.Add("贴图失败");
+                Log.Warn("截图确认后贴图失败（未注入贴图回调或贴图窗口创建失败）。");
+            }
+        }
+
+        if (copy)
         {
             if (ClipboardService.TryCopy(image, out string copyError))
             {
@@ -91,7 +128,7 @@ internal sealed class CaptureController(SettingsService settings)
             }
         }
 
-        if (_settings.Current.SaveOnCapture)
+        if (save)
         {
             try
             {
@@ -108,7 +145,7 @@ internal sealed class CaptureController(SettingsService settings)
 
         if (parts.Count == 0)
         {
-            parts.Add("未执行任何动作（复制与保存都已关闭）");
+            parts.Add("未执行任何动作（复制 / 保存 / 贴图都已关闭）");
         }
 
         StatusReported?.Invoke(string.Join("；", parts), false);

@@ -9,6 +9,9 @@ internal sealed class TrayHost : IDisposable
     private readonly System.Windows.Forms.NotifyIcon _notifyIcon;
     private readonly System.Windows.Forms.ToolStripMenuItem _captureItem;
     private readonly System.Windows.Forms.ToolStripMenuItem _autoStartItem;
+    private readonly System.Windows.Forms.ToolStripMenuItem _pinItem;
+    private readonly System.Windows.Forms.ToolStripMenuItem _clipboardPinItem;
+    private readonly System.Windows.Forms.ToolStripMenuItem _panelItem;
     private bool _suppressAutoStartEvent;
 
     public TrayHost(string hotkeyText, bool autoStartEnabled)
@@ -18,11 +21,29 @@ internal sealed class TrayHost : IDisposable
         _captureItem = new System.Windows.Forms.ToolStripMenuItem($"截图\t{hotkeyText}");
         _captureItem.Click += (_, _) => CaptureRequested?.Invoke();
 
+        _clipboardPinItem = new System.Windows.Forms.ToolStripMenuItem("从剪贴板贴图");
+        _clipboardPinItem.Click += (_, _) => ClipboardPinRequested?.Invoke();
+
+        _panelItem = new System.Windows.Forms.ToolStripMenuItem("贴图管理…");
+        _panelItem.Click += (_, _) => ManagePinsRequested?.Invoke();
+
+        _pinItem = new System.Windows.Forms.ToolStripMenuItem("显示全部贴图");
+        _pinItem.Click += (_, _) => ShowAllPinsRequested?.Invoke();
+
+        var hideAllPins = new System.Windows.Forms.ToolStripMenuItem("隐藏全部贴图");
+        hideAllPins.Click += (_, _) => HideAllPinsRequested?.Invoke();
+
+        var closeAllPins = new System.Windows.Forms.ToolStripMenuItem("关闭全部贴图");
+        closeAllPins.Click += (_, _) => CloseAllPinsRequested?.Invoke();
+
         var openSaveFolder = new System.Windows.Forms.ToolStripMenuItem("打开保存目录");
         openSaveFolder.Click += (_, _) => OpenSaveFolderRequested?.Invoke();
 
         var openConfigFolder = new System.Windows.Forms.ToolStripMenuItem("打开配置目录");
         openConfigFolder.Click += (_, _) => OpenConfigFolderRequested?.Invoke();
+
+        var openPinBackupFolder = new System.Windows.Forms.ToolStripMenuItem("打开贴图备份目录");
+        openPinBackupFolder.Click += (_, _) => OpenPinBackupFolderRequested?.Invoke();
 
         _autoStartItem = new System.Windows.Forms.ToolStripMenuItem("开机自启")
         {
@@ -44,8 +65,15 @@ internal sealed class TrayHost : IDisposable
         exit.Click += (_, _) => ExitRequested?.Invoke();
 
         menu.Items.Add(_captureItem);
+        menu.Items.Add(_clipboardPinItem);
+        menu.Items.Add(_panelItem);
+        menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+        menu.Items.Add(_pinItem);
+        menu.Items.Add(hideAllPins);
+        menu.Items.Add(closeAllPins);
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add(openSaveFolder);
+        menu.Items.Add(openPinBackupFolder);
         menu.Items.Add(openConfigFolder);
         menu.Items.Add(_autoStartItem);
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
@@ -64,6 +92,16 @@ internal sealed class TrayHost : IDisposable
 
     public event Action? CaptureRequested;
 
+    public event Action? ClipboardPinRequested;
+
+    public event Action? ManagePinsRequested;
+
+    public event Action? ShowAllPinsRequested;
+
+    public event Action? HideAllPinsRequested;
+
+    public event Action? CloseAllPinsRequested;
+
     public event Action? ExitRequested;
 
     public event Action<bool>? AutoStartToggled;
@@ -72,9 +110,20 @@ internal sealed class TrayHost : IDisposable
 
     public event Action? OpenConfigFolderRequested;
 
+    public event Action? OpenPinBackupFolderRequested;
+
     public event Action? AboutRequested;
 
     public void UpdateHotkeyText(string hotkeyText) => _captureItem.Text = $"截图\t{hotkeyText}";
+
+    /// <summary>贴图数量与剪贴板监听状态直接写在菜单上，避免"不知道现在有几张贴图"。</summary>
+    public void SyncPinState(int pinCount, bool clipboardWatcherRunning)
+    {
+        _panelItem.Text = $"贴图管理…（{pinCount} 张）";
+        _pinItem.Text = pinCount == 0 ? "显示全部贴图" : $"显示全部贴图（{pinCount}）";
+        _panelItem.Enabled = pinCount > 0;
+        _clipboardPinItem.Text = clipboardWatcherRunning ? "从剪贴板贴图　（监听中）" : "从剪贴板贴图";
+    }
 
     public void SyncAutoStart(bool enabled)
     {
