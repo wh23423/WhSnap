@@ -11,3 +11,5 @@ publish/
 *.cer
 *.log
 !src/WhSnap.App/Assets/*.ico
+# 会话存档（明文日志 + md 摘要）只留本机，不入库
+session_archives/
