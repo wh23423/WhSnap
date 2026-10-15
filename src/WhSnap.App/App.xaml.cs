@@ -77,7 +77,9 @@ public partial class App : System.Windows.Application
         {
             // 这个自检内部会同步等待异步 I/O，放到线程池上跑：没有 WPF 上下文就不会因
             // "续体等待被阻塞的 UI 线程"而死锁（已实测过一次，表现为进程静默挂死）。
-            Shutdown(Task.Run(Diagnostics.UpdateTestCommand.Run).GetAwaiter().GetResult());
+            // 可选 --manifest <update.json>：额外校验构建脚本产出的真实发布清单。
+            TryGetArgument(e.Args, "--manifest", out string? manifestPath);
+            Shutdown(Task.Run(() => Diagnostics.UpdateTestCommand.Run(manifestPath)).GetAwaiter().GetResult());
             return;
         }
 

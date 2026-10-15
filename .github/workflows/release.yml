@@ -51,17 +51,39 @@ jobs:
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
 
-      - name: Build installer (publish + ISCC)
+      - name: Build installer (publish + ISCC + update.json)
         shell: pwsh
-        run: ./build/tools/build-installer.ps1 -Version '${{ steps.version.outputs.version }}'
+        run: |
+          # Tag builds point the manifest at that tag's release asset URL; manual runs
+          # keep the local path (the manifest is still useful for offline checks).
+          if ('${{ github.ref_type }}' -eq 'tag') {
+            $base = '${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}'
+            ./build/tools/build-installer.ps1 -Version '${{ steps.version.outputs.version }}' -ReleaseBaseUrl $base
+          }
+          else {
+            ./build/tools/build-installer.ps1 -Version '${{ steps.version.outputs.version }}'
+          }
 
       - name: Smoke test (non-blocking, needs a desktop session)
         continue-on-error: true
         shell: pwsh
         run: |
-          & artifacts/publish/WhSnap.exe --selftest
+          # WinExe: must use Start-Process -Wait, otherwise PowerShell does not wait and
+          # the report file below would still be the previous run's.
+          $p = Start-Process -FilePath artifacts/publish/WhSnap.exe -ArgumentList '--selftest' -Wait -PassThru
+          Write-Host "selftest exit code: $($p.ExitCode)"
           $report = Join-Path $env:TEMP 'whsnap-selftest.txt'
           if (Test-Path $report) { Get-Content $report -Encoding UTF8 }
+
+      - name: Verify update.json
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath artifacts/publish/WhSnap.exe `
+            -ArgumentList '--update-test','--manifest','artifacts/installer/update.json' -Wait -PassThru
+          Write-Host "update-test exit code: $($p.ExitCode)"
+          $report = Join-Path $env:TEMP 'whsnap-update-test.txt'
+          if (Test-Path $report) { Get-Content $report -Encoding UTF8 | Select-Object -Last 12 }
+          if ($p.ExitCode -ne 0) { throw "update.json verification failed (exit $($p.ExitCode))." }
 
       - name: Sign installer (only when signing secrets are configured)
         if: env.SIGNING_PFX_BASE64 != ''
@@ -74,14 +96,22 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: WhSnap-${{ steps.version.outputs.version }}-setup-x64
-          path: artifacts/installer/*.exe
+          path: |
+            artifacts/installer/*.exe
+            artifacts/installer/update.json
+            build/installer/install-trust.ps1
+            artifacts/signing/*.cer
           if-no-files-found: error
 
       - name: Publish GitHub Release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/installer/*.exe
+          files: |
+            artifacts/installer/*.exe
+            artifacts/installer/update.json
+            build/installer/install-trust.ps1
+            artifacts/signing/*.cer
           generate_release_notes: true
           body: |
             WhSnap ${{ steps.version.outputs.version }}（预览版）
@@ -90,6 +120,10 @@ jobs:
             1. 下载 `WhSnap-${{ steps.version.outputs.version }}-setup-x64.exe`
             2. 运行安装，按提示完成（默认会勾选开机自启）
             3. 按 `F1` 开始截图
+
+            ## 自动更新
+            本 Release 同时上传了 `update.json`（版本 / 通道 / 下载地址 / SHA-256 / 体积）。
+            程序启动后会自动读它；`WhSnap.exe --update-test` 可离线验证这条链路。
 
             ## 关于「未知发布者」提示
             本版本使用自签名证书。若出现发布者未知的提示，可运行包内的

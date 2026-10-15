@@ -9,12 +9,16 @@
          the Chinese UI strings correctly; an editor that strips the BOM would
          otherwise silently garble the installer)
       3. locate ISCC.exe and compile the installer into artifacts/installer
+      4. generate update.json (self-update manifest) next to the installer, with the
+         installer's SHA-256 and size; -ReleaseBaseUrl turns the URL into the release
+         asset URL, without it the local absolute path is used (offline distribution)
 
     ASCII-only on purpose: Windows PowerShell 5.1 reads .ps1 files without a BOM as ANSI.
 
 .EXAMPLE
     powershell -File build/tools/build-installer.ps1
     powershell -File build/tools/build-installer.ps1 -SkipPublish     # reuse last publish
+    powershell -File build/tools/build-installer.ps1 -Version 1.0.0 -ReleaseBaseUrl https://github.com/wh23423/WhSnap/releases/download/v1.0.0
 #>
 [CmdletBinding()]
 param(
@@ -22,7 +26,12 @@ param(
     [string]$Runtime = 'win-x64',
     [string]$Version = '0.1.0',
     [switch]$SkipPublish,
-    [string]$IsccPath
+    [string]$IsccPath,
+    # self-update manifest (update.json)
+    [string]$Channel,
+    [string]$ReleaseBaseUrl,
+    [string]$Notes,
+    [string]$MinimumVersion = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -125,7 +134,46 @@ Get-ChildItem $installerDir -Filter '*.exe' -ErrorAction SilentlyContinue | Remo
 & $IsccPath "/DMyAppVersion=$Version" $issFile
 if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE." }
 
+# --- 4) self-update manifest (update.json) -----------------------------------
+Write-Step 'Generating update.json'
+
+# NOTE: @() -- a single match would otherwise be returned bare and .Name would be null.
+$installer = @(Get-ChildItem $installerDir -Filter '*.exe' -ErrorAction SilentlyContinue) | Select-Object -First 1
+if (-not $installer) { throw "installer exe not found in $installerDir." }
+
+# Preview versions go to the beta channel (the app's stable channel rejects them on purpose).
+if (-not $Channel) { $Channel = if ($Version -match '-') { 'beta' } else { 'stable' } }
+if ($Channel -notin @('stable', 'beta')) { throw "Channel must be stable or beta (got '$Channel')." }
+if (-not $Notes) { $Notes = "WhSnap $Version" }
+
+# Without -ReleaseBaseUrl the manifest points at the local file, which is exactly what
+# offline / shared-folder distribution and --update-test style checks need.
+$url = if ($ReleaseBaseUrl) { $ReleaseBaseUrl.TrimEnd('/') + '/' + $installer.Name } else { $installer.FullName }
+
+# Field names must match WhSnap.Core.UpdateManifest (System.Text.Json is case-sensitive here).
+$manifest = [ordered]@{
+    SchemaVersion  = 1
+    Version        = $Version
+    Channel        = $Channel
+    Url            = $url
+    Sha256         = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+    Size           = $installer.Length
+    PublishedAtUtc = (Get-Date).ToUniversalTime().ToString('o')
+    Notes          = $Notes
+    MinimumVersion = $MinimumVersion
+}
+
+$manifestPath = Join-Path $installerDir 'update.json'
+[System.IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false)))
+
+Write-Host ("    channel: {0}   version: {1}" -f $Channel, $Version)
+Write-Host ("    url    : {0}" -f $url)
+Write-Host ("    sha256 : {0}...   size: {1:N0} bytes" -f $manifest.Sha256.Substring(0, 16), $manifest.Size)
+
 Write-Step 'Result'
 Get-ChildItem $installerDir -Filter '*.exe' | ForEach-Object {
     Write-Host ("    {0}  ({1:N1} MB)" -f $_.Name, ($_.Length / 1MB))
+}
+Get-ChildItem $installerDir -Filter 'update.json' | ForEach-Object {
+    Write-Host ("    {0}  ({1:N0} bytes)" -f $_.Name, $_.Length)
 }

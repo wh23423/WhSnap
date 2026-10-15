@@ -5,15 +5,19 @@ using WhSnap.Services;
 namespace WhSnap.Diagnostics;
 
 /// <summary>
-/// 更新链路自检：WhSnap.exe --update-test
+/// 更新链路自检：WhSnap.exe --update-test [--manifest &lt;update.json&gt;]
 ///
 /// 全程在临时目录里用**本地传输**端到端跑：构造 update.json 与假安装包 →
 /// 检查 → 下载 → SHA-256 校验 → 篡改后必须被拒 → 通道/版本/最低版本门槛。
 /// 不需要联网，也不会真的启动安装器。
+///
+/// 带 <c>--manifest</c> 时额外验证"构建脚本刚产出的那份发布清单"：
+/// 字段能解析、哈希是 64 位十六进制、本地安装包体积与 SHA-256 对得上，
+/// 并且能被 <see cref="UpdateService"/> 真的下载校验一遍——这是 T6 的机器验收。
 /// </summary>
 internal static class UpdateTestCommand
 {
-    public static int Run()
+    public static int Run(string? manifestPath = null)
     {
         var report = new StringBuilder();
         var failures = new List<string>();
@@ -304,6 +308,11 @@ internal static class UpdateTestCommand
                     settings.Save();
                 }
             });
+
+            if (!string.IsNullOrWhiteSpace(manifestPath))
+            {
+                CheckRealManifest(manifestPath, report, failures);
+            }
         }
         catch (Exception ex)
         {
@@ -337,6 +346,118 @@ internal static class UpdateTestCommand
         var bytes = new byte[256 * 1024];
         Random.Shared.NextBytes(bytes);
         File.WriteAllBytes(path, bytes);
+    }
+
+    /// <summary>
+    /// 校验构建脚本产出的真实发布清单（T6 验收）：字段完整 → 本地安装包体积与 SHA-256 对得上 →
+    /// 能被程序真的下载校验一遍 → 篡改哈希会被拒。
+    /// </summary>
+    private static void CheckRealManifest(string manifestPath, StringBuilder report, List<string> failures)
+    {
+        try
+        {
+            report.AppendLine(new string('-', 68));
+            report.AppendLine($"发布清单验证：{manifestPath}");
+
+            if (!File.Exists(manifestPath))
+            {
+                throw new FileNotFoundException($"清单不存在：{manifestPath}");
+            }
+
+            var manifest = UpdateManifest.FromJson(File.ReadAllText(manifestPath));
+            if (manifest is null)
+            {
+                throw new InvalidOperationException("清单无法解析（字段名/类型要与 UpdateManifest 一致）。");
+            }
+
+            if (string.IsNullOrWhiteSpace(manifest.Version) || !SemanticVersion.TryParse(manifest.Version, out _))
+            {
+                throw new InvalidOperationException($"版本号不可解析：{manifest.Version}");
+            }
+
+            if (manifest.Channel != UpdateChannels.Stable && manifest.Channel != UpdateChannels.Beta)
+            {
+                throw new InvalidOperationException($"通道非法：{manifest.Channel}（应为 stable 或 beta）。");
+            }
+
+            if (manifest.Sha256.Length != 64 || !manifest.Sha256.All(Uri.IsHexDigit))
+            {
+                throw new InvalidOperationException($"SHA-256 不是 64 位十六进制：{manifest.Sha256}");
+            }
+
+            if (manifest.Size <= 0)
+            {
+                throw new InvalidOperationException($"体积非法：{manifest.Size}");
+            }
+
+            report.AppendLine($"[PASS] 字段完整：版本 {manifest.Version}，通道 {manifest.Channel}，体积 {manifest.Size / 1024 / 1024.0:0.#} MB，SHA-256 {manifest.Sha256[..16]}…");
+
+            if (UpdateService.ResolveSourceKind(manifest.Url) != UpdateSourceKind.LocalFile)
+            {
+                report.AppendLine($"[SKIP] 下载校验：清单指向 https（{manifest.Url}），本地自检不访问网络。");
+                return;
+            }
+
+            string localPayload = UpdateService.ToLocalPath(manifest.Url);
+            if (!File.Exists(localPayload))
+            {
+                throw new FileNotFoundException($"清单里的本地安装包不存在：{localPayload}");
+            }
+
+            long actualSize = new FileInfo(localPayload).Length;
+            if (actualSize != manifest.Size)
+            {
+                throw new InvalidOperationException($"体积不符：清单 {manifest.Size}，实际 {actualSize}。");
+            }
+
+            if (!Sha256Util.Matches(manifest.Sha256, localPayload, out string actualHash))
+            {
+                throw new InvalidOperationException($"SHA-256 不符：清单 {manifest.Sha256}，实际 {actualHash}。");
+            }
+
+            report.AppendLine($"[PASS] 本地安装包与清单一致：{Path.GetFileName(localPayload)}（{actualSize / 1024 / 1024.0:0.#} MB）");
+
+            // 经程序自己的下载路径再验一遍（含体积与哈希校验；失败会删除临时文件）
+            var service = new UpdateService(manifestPath, manifest.Channel);
+            string downloaded = service.DownloadAsync(manifest).GetAwaiter().GetResult();
+            try
+            {
+                if (!Sha256Util.Matches(manifest.Sha256, downloaded, out string downloadedHash))
+                {
+                    throw new InvalidOperationException($"下载后哈希不符：{downloadedHash}");
+                }
+
+                report.AppendLine($"[PASS] 经更新服务下载 + 校验通过：{downloaded}");
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(downloaded))
+                    {
+                        File.Delete(downloaded);
+                    }
+                }
+                catch
+                {
+                    // 清理失败不影响结论
+                }
+            }
+
+            // 清单本身不可更新（版本不高于当前程序）时，理由必须说清楚，而不是静默失败
+            var current = new UpdateService(manifestPath, manifest.Channel).CheckAsync().GetAwaiter().GetResult();
+            if (!current.CanUpdate && string.IsNullOrWhiteSpace(current.Message))
+            {
+                throw new InvalidOperationException("不可更新时没有给出原因。");
+            }
+
+            report.AppendLine($"[PASS] 检查结论可读：{current.Message}");
+        }
+        catch (Exception ex)
+        {
+            failures.Add("发布清单验证");
+            report.AppendLine($"[FAIL] 发布清单验证：{ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     private static UpdateManifest BuildManifest(
