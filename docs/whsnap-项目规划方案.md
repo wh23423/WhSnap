@@ -557,7 +557,7 @@ powershell -File build/tools/build-installer.ps1 -Version 0.1.0
 - ✅ 诊断包导出（三入口 + 逐条目脱敏）与崩溃转储（脱敏文本 + minidump + 下次启动提示）
 - ✅ 性能埋点（§2.2 四项指标全部实测达标，样本落盘、`--selftest` 与诊断包都带）
 - ✅ 安装包完善（升级就地、安装日志、卸载询问保留配置与 `/DELUSERDATA`、手册入包与开始菜单）
-- ✅ 用户手册（含机器校验的覆盖率）+ `update.json` 生成与 CI 资产上传（CI 真跑待推远端）
+- ✅ 用户手册（含机器校验的覆盖率）+ `update.json` 生成与 CI 资产上传（**CI 已真跑通**：run `38751799936` success）
 - ✅ **自签名签名链路**（v4.7）：`build-installer.ps1 -Sign` **先签 payload 再 ISCC**（否则装到磁盘的 `WhSnap.exe`
   仍是未签名）、后签 setup exe、导出公开 `.cer`（`install-trust.ps1` 要用），`update.json` 最后生成、哈希取自签名后的文件
 - ✅ **`--power-test`**（v4.7）：唤醒后热键重注册（风险 R4）从"待实机"变成 8 项机器断言
@@ -565,10 +565,11 @@ powershell -File build/tools/build-installer.ps1 -Version 0.1.0
 
 ### 待办（按建议顺序）
 
-1. **推远端并跑一次 CI**（唯一还没验证过的环节）：`git remote add origin https://github.com/wh23423/WhSnap.git` →
-   推 tag → 确认 Actions 产出 安装包 / `update.json` / `install-trust.ps1` / `WhSnap.cer` 四类资产。
-   若配上 `SIGNING_PFX_BASE64` / `SIGNING_PFX_PASSWORD` 两个 secret，CI 出的就是**已签名**包
-   （同一条 base64 分支已在本机跑通，见 §18）。
+1. **出签名版 Release**（CI 本身已真跑通，见 §18）：① `git push origin master`（T10/T11 这 3 个提交还没推）→
+   ② 配仓库 Secret `SIGNING_PFX_BASE64` / `SIGNING_PFX_PASSWORD` → ③ 打**新** tag（`v1.0.0-preview.2`）
+   触发 Actions，确认产出**四类**资产（安装包 / `update.json` / `install-trust.ps1` / **`WhSnap.cer`**）。
+   ⚠️ 现存 Release `v1.0.0-preview.1` 是**未签名**包且**没有 `.cer`**；**不要移动该 tag**（已有人下载，
+   移动会让线上 `update.json` 哈希与现实不符）。
 2. **真实双屏回归**：在双显示器（尤其混合缩放比）机器上实跑一次，重点验证"鼠标捕获跨屏移交"与竖屏旋转。
 3. **真机睡眠/唤醒 + HDR**：唤醒后热键重注册已由 `--power-test` 机器验证，剩下"真睡一觉再唤醒"这一步；
    HDR 屏下实看截图是否偏灰。
@@ -677,9 +678,11 @@ powershell -File build/tools/build-installer.ps1 -Version 0.1.0
 
 **未验证（诚实列出）**：
 
-1. **CI 从未运行过**：仓库没有远端、没有 tag，`release.yml` 只做到 YAML 解析（PyYAML）+ 11 个步骤逐项核对，
-   外加本机把它调用的那条 `-PfxBase64` 分支跑通；推远端打 tag 后应产出
-   安装包 + `update.json` + `install-trust.ps1` + `WhSnap.cer` 四类 Release 资产。
+1. ~~**CI 从未运行过**~~ **→ 已运行（2026-10-15 23:22 更正）**：tag `v1.0.0-preview.1` → `0124515`，
+   run `38751799936` **success**，Release 产出 **3 个**资产。**但仍有两处未达成**：① 因签名 secret 未配置，
+   该包是**未签名**的（线上资产 `Get-AuthenticodeSignature` = `NotSigned`），且**缺 `WhSnap.cer`**；
+   ② tag 指向 `0124515`，**早于** T10 的 `b55a586`，T10/T11 与后续 2 个文档/工具提交共 3 个提交**尚未推送**。
+   详见 [项目进度报告](项目进度报告.md)。
 2. **真实双屏 / 混合缩放比回归**：从 M1 起只在合成拓扑上验证过，需真机（重点：鼠标捕获跨屏移交、竖屏旋转）。
 3. **HDR / 宽色域**：WGC/DXGI 只处理 BGRA8，10-bit 会自动降级 GDI；有 HDR 屏时需实看是否偏灰。
 4. **真机睡眠 / 唤醒**：唤醒后热键重注册的代码路径已由 `--power-test` 机器验证（8 项 + 变异测试），
@@ -703,18 +706,26 @@ Rename-Item -LiteralPath 'D:\desktop\WHocr' -NewName 'WhSnap'
 
 原因：本会话绑定在该路径上，会话进行中改名会导致工作区失联。改名后文档路径为 `D:\desktop\WhSnap\docs\whsnap-项目规划方案.md`。
 
-### 首次推送到 GitHub
+### 推送到 GitHub（**已完成**；此处改为"下次发版怎么做"）
+
+首次推送已于 2026-10-15 执行完毕（分支是 **`master`**，不是 `main`；`origin` 已存在）。
 
 ```powershell
 # 在 D:\desktop\WhSnap 下执行
-git remote add origin https://github.com/wh23423/WhSnap.git
-git branch -M main
-git push -u origin main
+# ① 先把还没推的提交推上去（当前领先 origin/master 3 个）
+git push origin master
 
-# 发布第一个预览版（会触发 Actions 自动构建并创建 Release）
-git tag v0.1.0
-git push origin v0.1.0
+# ② 在仓库 Settings → Secrets and variables → Actions 配两个 Secret（签名版依赖它们）：
+#    SIGNING_PFX_BASE64   = artifacts\signing\pfx-base64.txt 的内容
+#    SIGNING_PFX_PASSWORD = artifacts\signing\pfx-password.txt 的内容
+
+# ③ 打【新】tag 触发 Actions（别移动已发布的 v1.0.0-preview.1）
+git tag v1.0.0-preview.2
+git push origin v1.0.0-preview.2
 ```
+
+> 已发布过的 tag / Release：`v1.0.0-preview.1`（`0124515`，**未签名**、缺 `WhSnap.cer`）。移动已发布的 tag
+> 会让已下载用户与线上 `update.json` 的哈希对不上，所以一律**新 tag 重发**。
 
 > 提交作者目前是 `wh <2848238194@qq.com>`（沿用你本机已有的 git 配置）。若希望这些提交关联到 GitHub 账号 `wh23423`，改为：
 > `git config user.email "wh23423@users.noreply.github.com"`

@@ -657,8 +657,14 @@ M5 对标收尾 ✅（`v0.5.0-preview`：元素检测、取色器与颜色历史
 
 **当前状态**：功能与发布工程均已完成，`v1.0.0-preview.1` 安装包已在本机通过安装 / 覆盖安装 / 卸载三连测
 （含用户数据保留与 `/DELUSERDATA` 删除两个分支），并已产出**自签名版**安装包（装到磁盘的 `WhSnap.exe` 与 setup exe
-都带 `CN=WhSnap` 签名，导入信任后状态 `Valid`）。唯一还没跑过的是 **CI**：仓库尚未推远端，`git remote` 为空、也没有 tag，所以 GitHub Actions 从未执行过
-（推上去打 tag 即可验证；配好签名 secret 后 CI 出的就是签名包）。
+都带 `CN=WhSnap` 签名，导入信任后状态 `Valid`）。
+
+**CI 已经真跑通了**：tag `v1.0.0-preview.1` 已推远端，Actions run `38751799936` **success**，Release 已建。
+但**已发布的那个包不是签名版**：签名 secret 未配置，CI 走了"未签名预览包"分支，产物里也**没有 `WhSnap.cer`**
+（`install-trust.ps1` 因此无从导入）。同时 T10/T11 这 3 个提交**还没推**（`master` 领先 `origin/master` 3 个）。
+要出签名版 Release：① `git push origin master` → ② 配 Secret `SIGNING_PFX_BASE64` / `SIGNING_PFX_PASSWORD` →
+③ 打**新** tag（`v1.0.0-preview.2`，别移动已发布的 `v1.0.0-preview.1`）。
+完整取证见 [项目进度报告](docs/项目进度报告.md)。
 
 十个自检命令（`--selftest` / `--overlay-test` / `--pin-test` / `--settings-test` / `--annotate-test` /
 `--element-test` / `--update-test` / `--crash-test` / `--power-test` / `--diagnostics-pack`）全部 exit 0
