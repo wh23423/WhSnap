@@ -426,6 +426,23 @@ Get-Content "$env:TEMP\whsnap-update-test.txt" -Encoding UTF8
 缺失/损坏/非法地址都给出可读失败原因且不抛异常，并用「边抽 Dispatcher 边等」的方式
 证明异步检查没有在 UI 线程上同步阻塞（进度快照 §7 第 7 条那个死锁坑）。
 
+### 性能埋点与实测值
+
+规划里定下的四项量化门槛由 `Services/PerfTrace.cs` 在真实路径上自动采样（不额外拖慢主流程，
+鼠标跟随这类密集样本只在内存里攒中位数，不写日志）：
+
+| 指标 | 规划门槛 | 实测（本机 2560×1440 单屏） |
+|---|---|---|
+| 热键 → 遮罩可交互 | ≤ 200 ms | **192.5 ms** ✅ |
+| 遮罩内鼠标跟随延迟 | ≤ 16 ms | **中位 0.06 ms / 最大 11.0 ms** ✅ |
+| 确认 → 剪贴板可粘贴（4K） | ≤ 400 ms | **234 ms** ✅ |
+| 冷启动 → 托盘就绪 | ≤ 1.5 s | **322.6 ms** ✅ |
+
+样本按指标合并落盘到 `%APPDATA%\WhSnap\performance.json`，所以：
+`--selftest` 会打印完整报告（含上次落盘的真实冷启动值），诊断包的 `performance.txt` 自动附带它。
+自检用 4K 合成图跑真实剪贴板路径来测第三项；**规划门槛只标注达标/超标不判失败**，
+另设宽松的防回归红线，防止后续改动把性能拖垮还不知道。
+
 ### 崩溃证据与诊断包
 
 **崩溃时会发生什么**：未处理异常（界面异常与域异常）会被记成两份证据，放在
@@ -511,11 +528,11 @@ src/
     Settings/           设置窗口（由 schema 自动生成 UI）+ 热键录制与冲突展示
     Interop/            全部 Win32 P/Invoke 集中于此（含 dbghelp 的 MiniDumpWriteDump）
     Services/           热键注册与 L1 探针、剪贴板监听与读入、设置绑定/导入导出、保存、自启、配置、日志、拓扑监听、
-                        更新链路（UpdateService/UpdateCoordinator）、崩溃证据（CrashHandler）、诊断包（DiagnosticsPack）
+                        更新链路（UpdateService/UpdateCoordinator）、崩溃证据（CrashHandler）、诊断包（DiagnosticsPack）、
+                        性能埋点（PerfTrace）
     Tray/               托盘图标与菜单
     Diagnostics/        无界面自检（selftest / overlay-test / pin-test / settings-test / annotate-test / element-test /
-                        update-test / crash-test / diagnostics-pack / capture-to）
-tests/
+                        update-test / crash-test / diagnostics-pack / capture-to）tests/
   WhSnap.Core.Tests/    xUnit
 build/
   installer/            Inno Setup 脚本、信任导入脚本
