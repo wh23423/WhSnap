@@ -1,6 +1,6 @@
 # WhSnap
 
-对标 Snipaste 的 Windows 截图 / 贴图工具。当前版本 **`v1.0.0-preview.1`**（功能与发布工程已完成，见文末「里程碑」）。
+对标 Snipaste 的 Windows 截图 / 贴图工具。当前版本 **`v1.0.0-preview.2`**（功能与发布工程已完成，见文末「里程碑」）。
 
 - 项目规划方案：[docs/whsnap-项目规划方案.md](docs/whsnap-项目规划方案.md)
 - 用户手册：[docs/whsnap-用户手册.md](docs/whsnap-用户手册.md)（安装、热键全表、47 项设置说明、操作与疑难；装完也会出现在应用目录与开始菜单）
@@ -503,8 +503,8 @@ Get-Content "$env:TEMP\whsnap-power-test.txt" -Encoding UTF8
 发布流程：打标签 → GitHub Actions 自动构建并创建 Release。
 
 ```powershell
-git tag v1.0.0-preview.1
-git push origin v1.0.0-preview.1
+git tag v1.0.0-preview.2
+git push origin v1.0.0-preview.2
 ```
 
 ### 发布清单 `update.json` 与 Release 资产
@@ -514,13 +514,13 @@ git push origin v1.0.0-preview.1
 ```jsonc
 {
   "SchemaVersion": 1,
-  "Version": "1.0.0-preview.1",
+  "Version": "1.0.0-preview.2",
   "Channel": "beta",                 // 版本号带横线（预览版）→ beta，否则 stable
-  "Url": "…/WhSnap-1.0.0-preview.1-setup-x64.exe",
+  "Url": "…/WhSnap-1.0.0-preview.2-setup-x64.exe",
   "Sha256": "…",                     // 取自刚编译出的安装包
-  "Size": 53585340,
-  "PublishedAtUtc": "2026-10-15T14:20:00Z",
-  "Notes": "WhSnap 1.0.0-preview.1",
+  "Size": 53602712,
+  "PublishedAtUtc": "2026-10-16T02:30:00Z",
+  "Notes": "WhSnap 1.0.0-preview.2",
   "MinimumVersion": ""
 }
 ```
@@ -565,12 +565,13 @@ Get-Content "$env:TEMP\whsnap-update-test.txt" -Encoding UTF8 | Select-Object -L
 powershell -File build\tools\make-cert.ps1 -Subject 'CN=WhSnap' -Years 5
 
 # 2. 打签名版安装包（签名 + update.json 一条命令搞定）
-powershell -File build\tools\build-installer.ps1 -Version 1.0.0-preview.1 `
+powershell -File build\tools\build-installer.ps1 -Version 1.0.0-preview.2 `
   -Sign -PfxFile artifacts\signing\WhSnap.pfx -PfxPassword <你的 pfx 口令>
 
-# 3. 让 CI 自动签名：把 .pfx 转成 base64 存入仓库 Secrets
+# 3. 让 CI 自动签名：把 .pfx 转成 base64 存入仓库 Secrets（✅ 本仓库已配置）
 [Convert]::ToBase64String([IO.File]::ReadAllBytes("artifacts\signing\WhSnap.pfx"))
 #    Secret 名：SIGNING_PFX_BASE64 / SIGNING_PFX_PASSWORD（没配就出未签名包，构建不会失败）
+#    已配：本仓库这两个 Secret 均已于 2026-10-16 写入，CI 出的即为签名包
 ```
 
 `-Sign` 的**顺序有讲究**，别手工调换：
@@ -654,16 +655,16 @@ M3 快捷键设置与全配置化 ✅（`v0.3.0-preview`）→ M4 全量标注 �
 M5 对标收尾 ✅（`v0.5.0-preview`：元素检测、取色器与颜色历史、托盘细化）→
 **M6 发布工程化 ✅（`v1.0.0-preview.1`）**：自动更新、诊断包、崩溃转储、性能埋点（§2.2 四项达标）、
 安装包完善、用户手册、`update.json` 与 CI 资产。
+**发布收口 ✅（`v1.0.0-preview.2`）**：签名 Secret 已配、CI 产出**签名版** Release 与四类资产（含 `WhSnap.cer`）。
 
-**当前状态**：功能与发布工程均已完成，`v1.0.0-preview.1` 安装包已在本机通过安装 / 覆盖安装 / 卸载三连测
-（含用户数据保留与 `/DELUSERDATA` 删除两个分支），并已产出**自签名版**安装包（装到磁盘的 `WhSnap.exe` 与 setup exe
-都带 `CN=WhSnap` 签名，导入信任后状态 `Valid`）。
+**当前状态**：功能与发布工程均已完成。`v1.0.0-preview.2` 已在本机以 **CI 同款签名分支**（`-Sign -PfxBase64
+-PfxPassword`）构建并通过端到端验收：装到磁盘的 `WhSnap.exe` 与 setup exe 都带 `CN=WhSnap` 自签名 + RFC3161
+（DigiCert）时间戳，安装 / 装机自检 20 PASS / 覆盖安装 / 卸载三连测全绿、卸载后用户数据保留；
+`v1.0.0-preview.1` 此前也已通过同样三连测（含 `/DELUSERDATA` 分支）。
 
-**CI 已经真跑通了**：tag `v1.0.0-preview.1` 已推远端，Actions run `38751799936` **success**，Release 已建。
-但**已发布的那个包不是签名版**：签名 secret 未配置，CI 走了"未签名预览包"分支，产物里也**没有 `WhSnap.cer`**
-（`install-trust.ps1` 因此无从导入）。同时 T10/T11 这 3 个提交**还没推**（`master` 领先 `origin/master` 3 个）。
-要出签名版 Release：① `git push origin master` → ② 配 Secret `SIGNING_PFX_BASE64` / `SIGNING_PFX_PASSWORD` →
-③ 打**新** tag（`v1.0.0-preview.2`，别移动已发布的 `v1.0.0-preview.1`）。
+**CI 与发布**：签名 Secret `SIGNING_PFX_BASE64` / `SIGNING_PFX_PASSWORD` **已配置**；
+tag `v1.0.0-preview.1` 的 run `38751799936` 已 **success**，但那是**未签名**包且缺 `WhSnap.cer`
+（当时 Secret 未配）。打 tag `v1.0.0-preview.2` 后 CI 出的即为**签名版**并带齐四类资产。
 完整取证见 [项目进度报告](docs/项目进度报告.md)。
 
 十个自检命令（`--selftest` / `--overlay-test` / `--pin-test` / `--settings-test` / `--annotate-test` /

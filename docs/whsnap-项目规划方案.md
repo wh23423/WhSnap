@@ -563,6 +563,11 @@ powershell -File build/tools/build-installer.ps1 -Version 0.1.0
 - ✅ **`--power-test`**（v4.7）：唤醒后热键重注册（风险 R4）从"待实机"变成 8 项机器断言
 - 交付验收明细见 **§18**
 
+> **2026-10-16 02:35 发布收口**：版本 bump 到 **`1.0.0-preview.2`**；签名 Secret 已写入仓库；
+> 本机以 CI 同款签名分支构建并通过 `verify-signed-install.ps1` 端到端验收（**PASS**）。
+> §18 里的 `preview.1` 记录是当时的实测原文，保留不动；`preview.2` 的取证见
+> [项目进度报告](项目进度报告.md) 的「更新：2026-10-16 02:35」一节。
+
 ### 待办（按建议顺序）
 
 1. **出签名版 Release**（CI 本身已真跑通，见 §18）：① `git push origin master`（T10/T11 这 3 个提交还没推）→
