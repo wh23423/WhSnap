@@ -1,0 +1,102 @@
+name: release
+
+# 触发方式：
+#   1) 推送 v* 标签  → 构建 + 打包 + 发布 GitHub Release
+#   2) 手动 workflow_dispatch → 只构建并上传 artifact，不创建 Release
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  SIGNING_PFX_BASE64: ${{ secrets.SIGNING_PFX_BASE64 }}
+  SIGNING_PFX_PASSWORD: ${{ secrets.SIGNING_PFX_PASSWORD }}
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          $version = '0.1.0'
+          if ('${{ github.ref_type }}' -eq 'tag') {
+            $version = '${{ github.ref_name }}'.TrimStart('v')
+          }
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Building WhSnap $version"
+
+      - name: Restore
+        run: dotnet restore WhSnap.sln
+
+      - name: Unit tests
+        run: dotnet test tests/WhSnap.Core.Tests/WhSnap.Core.Tests.csproj -c Release --no-restore
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer (publish + ISCC)
+        shell: pwsh
+        run: ./build/tools/build-installer.ps1 -Version '${{ steps.version.outputs.version }}'
+
+      - name: Smoke test (non-blocking, needs a desktop session)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          & artifacts/publish/WhSnap.exe --selftest
+          $report = Join-Path $env:TEMP 'whsnap-selftest.txt'
+          if (Test-Path $report) { Get-Content $report -Encoding UTF8 }
+
+      - name: Sign installer (only when signing secrets are configured)
+        if: env.SIGNING_PFX_BASE64 != ''
+        shell: pwsh
+        run: |
+          $installer = (Get-ChildItem artifacts/installer/*.exe | Select-Object -First 1).FullName
+          ./build/tools/sign.ps1 -Path $installer -PfxBase64 $env:SIGNING_PFX_BASE64 -PfxPassword $env:SIGNING_PFX_PASSWORD
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WhSnap-${{ steps.version.outputs.version }}-setup-x64
+          path: artifacts/installer/*.exe
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/installer/*.exe
+          generate_release_notes: true
+          body: |
+            WhSnap ${{ steps.version.outputs.version }}（预览版）
+
+            ## 安装
+            1. 下载 `WhSnap-${{ steps.version.outputs.version }}-setup-x64.exe`
+            2. 运行安装，按提示完成（默认会勾选开机自启）
+            3. 按 `F1` 开始截图
+
+            ## 关于「未知发布者」提示
+            本版本使用自签名证书。若出现发布者未知的提示，可运行包内的
+            `install-trust.ps1`（需管理员）一次性导入信任，之后不再提示。
+            详细说明见仓库 README 的「分发」一节。
+
+            ## 已知限制（预览版）
+            - 遮罩只覆盖鼠标所在的那一台显示器，跨屏选择尚未支持
+            - 采集使用 GDI BitBlt：HDR 与部分硬件叠加层内容可能不准确
+            - 尚无标注、贴图、取色器、元素检测（按里程碑推进中）

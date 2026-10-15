@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>WhSnap</RootNamespace>
+    <AssemblyName>WhSnap</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\whsnap.ico</ApplicationIcon>
+    <Version>0.1.0</Version>
+    <AssemblyVersion>0.1.0.0</AssemblyVersion>
+    <FileVersion>0.1.0.0</FileVersion>
+    <InformationalVersion>0.1.0-preview.1</InformationalVersion>
+    <Product>WhSnap</Product>
+    <Company>wh23423</Company>
+    <Copyright>Copyright (c) 2026 wh23423</Copyright>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <DebugType>embedded</DebugType>
+    <!--
+      WFAC010 建议把高 DPI 配置从 manifest 挪到 ApplicationHighDpiMode（WinForms 专有机制）。
+      本程序是 WPF 主体 + WinForms 托盘，PerMonitorV2 必须由 manifest 声明，故有意保留。
+    -->
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      UseWPF + UseWindowsForms 会让 SDK 注入 WinForms 那套隐式 using
+      （System.Drawing / System.Windows.Forms，且不含 System.IO），
+      造成 Rectangle、Clipboard、KeyEventArgs 等类型与 WPF 同名类型歧义。
+      这里纠正为常规 BCL 集合；WinForms 类型在 TrayHost 中全限定使用。
+    -->
+    <Using Remove="System.Drawing" />
+    <Using Remove="System.Windows.Forms" />
+    <Using Include="System.IO" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\whsnap.ico" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WhSnap.Core\WhSnap.Core.csproj" />
+  </ItemGroup>
+
+</Project>

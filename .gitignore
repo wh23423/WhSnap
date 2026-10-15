@@ -1,0 +1,13 @@
+bin/
+obj/
+artifacts/
+publish/
+.vs/
+.idea/
+*.user
+*.suo
+*.pfx
+*.snk
+*.cer
+*.log
+!src/WhSnap.App/Assets/*.ico
