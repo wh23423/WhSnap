@@ -53,6 +53,13 @@ internal sealed class UpdateService
 
     public string CurrentVersion { get; }
 
+    /// <summary>
+    /// 按用户配置构造（清单地址 / 通道）。更新相关的四个配置项必须从这里进入代码路径，
+    /// 否则配置面上有开关、实际没人读——这正是 M6 第 4 项要补的缺口。
+    /// </summary>
+    public static UpdateService FromSettings(AppSettings settings) =>
+        new(settings.UpdateManifestUrl, settings.UpdateChannel);
+
     /// <summary>当前程序版本（取自程序集信息版本，去掉 +build 元数据）。</summary>
     public static string GetCurrentVersion()
     {

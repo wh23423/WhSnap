@@ -24,6 +24,8 @@ public partial class App : System.Windows.Application
     private Settings.SettingsWindow? _settingsWindow;
     private TopologyWatcher? _topology;
     private ClipboardWatcher? _clipboard;
+    private UpdateCoordinator? _updater;
+    private bool _updateCheckRunning;
     private ColorHistory _colorHistory = new();
     private DispatcherTimer? _settingsSaveTimer;
 
@@ -103,6 +105,7 @@ public partial class App : System.Windows.Application
 
         _settings = new SettingsService();
         _settings.Load();
+        _updater = new UpdateCoordinator(_settings);
         _colorHistory = ColorHistory.FromText(_settings.Current.ColorHistoryText, _settings.Current.ColorHistoryRetention);
 
         _hotkeys = new HotkeyManager();
@@ -118,6 +121,7 @@ public partial class App : System.Windows.Application
         _tray.HideAllPinsRequested += () => _pins?.HideAll();
         _tray.CloseAllPinsRequested += () => _pins?.CloseAll();
         _tray.SettingsRequested += ShowSettings;
+        _tray.CheckUpdatesRequested += OnCheckUpdatesRequested;
         _tray.PickerRequested += () => _capture?.Start(colorPickMode: true);
         _tray.RecentColorSelected += CopyColorFromHistory;
         _tray.ClearColorHistoryRequested += () =>
@@ -207,6 +211,9 @@ public partial class App : System.Windows.Application
         {
             _tray.ShowBalloon("热键已被占用", $"{failed.Message} 可在托盘「设置…」里改键或检测占用。", warning: true);
         }
+
+        // 更新检查放在最后：先让托盘/热键/贴图就绪，再异步拉清单（不阻塞界面）
+        StartStartupUpdateCheck();
     }
 
     protected override void OnExit(System.Windows.ExitEventArgs e)
@@ -336,6 +343,8 @@ public partial class App : System.Windows.Application
             ApplyHotkeys = _ => ApplyHotkeys(),
             ProbeHotkeys = bindings => _hotkeys?.ProbeAll(bindings) ?? [],
             DiagnosticsProvider = BuildDiagnostics,
+            Updater = _updater,
+            InstallUpdate = InstallUpdateFromSettingsAsync,
             ClearPinBackups = () =>
             {
                 _pins?.BackupStore.Clear();
@@ -371,12 +380,177 @@ public partial class App : System.Windows.Application
         }
     }
 
+    // ---------------------------------------------------------------- 更新链路（M6 第 4 项）
+
+    /// <summary>
+    /// 启动检查更新：完全异步、带超时，失败只写日志（不弹任何东西、也绝不让程序起不来）。
+    /// 这里刻意不 <c>await</c>，让 OnStartup 立刻返回把界面交还给用户。
+    /// </summary>
+    private void StartStartupUpdateCheck()
+    {
+        if (_updater is null || !_updater.StartupCheckEnabled)
+        {
+            Log.Info("启动检查更新已关闭（设置「更新」分组里的「启动时检查更新」）。");
+            return;
+        }
+
+        _ = RunStartupUpdateCheckAsync();
+    }
+
+    private async Task RunStartupUpdateCheckAsync()
+    {
+        try
+        {
+            // 先等托盘、热键、贴图恢复完成，别在最忙的时候抢网络
+            await Task.Delay(TimeSpan.FromSeconds(4));
+
+            var result = await _updater!.CheckAsync();
+
+            if (result is not { CanUpdate: true, Manifest: not null })
+            {
+                Log.Info($"启动检查更新：{result.Message}");
+                return;
+            }
+
+            Log.Info($"启动检查更新：发现新版本 {result.Manifest.Version}（当前 {_updater.CurrentVersion}）。");
+            _tray?.ShowBalloon(
+                "发现新版本",
+                $"WhSnap {result.Manifest.Version} 可用（当前 {_updater.CurrentVersion}）。"
+                + "可在托盘「检查更新…」或设置「维护」页安装。");
+
+            if (_updater.AutoDownloadEnabled)
+            {
+                await DownloadAndOfferInstallAsync(result.Manifest, silentOnFailure: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            // 启动路径上的任何更新问题都只进日志
+            Log.Warn($"启动检查更新失败：{ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>托盘「检查更新…」：手动检查，结果一定以气泡回报（包括"已是最新"和失败原因）。</summary>
+    private async void OnCheckUpdatesRequested()
+    {
+        if (_updater is null)
+        {
+            return;
+        }
+
+        if (_updateCheckRunning)
+        {
+            _tray?.ShowBalloon("检查更新", "正在检查中，请稍候…");
+            return;
+        }
+
+        _updateCheckRunning = true;
+        _tray?.ShowBalloon("检查更新", $"正在检查 {_updater.Channel} 通道…");
+
+        try
+        {
+            var result = await _updater.CheckAsync();
+
+            if (result is not { CanUpdate: true, Manifest: not null })
+            {
+                _tray?.ShowBalloon("检查更新", result.Message);
+                return;
+            }
+
+            _tray?.ShowBalloon("发现新版本", result.Message);
+            await DownloadAndOfferInstallAsync(result.Manifest, silentOnFailure: false);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("手动检查更新失败", ex);
+            _tray?.ShowBalloon("检查更新失败", $"{ex.GetType().Name}: {ex.Message}", warning: true);
+        }
+        finally
+        {
+            _updateCheckRunning = false;
+        }
+    }
+
+    /// <summary>下载 → SHA-256 校验 → 询问 → 安装。启动路径上静默失败，手动路径上明确报错。</summary>
+    private async Task DownloadAndOfferInstallAsync(UpdateManifest manifest, bool silentOnFailure)
+    {
+        if (_updater is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _tray?.ShowBalloon("正在下载更新", $"WhSnap {manifest.Version} 下载中，完成后会校验 SHA-256。");
+            string installer = await _updater.DownloadAsync(manifest);
+
+            var choice = System.Windows.MessageBox.Show(
+                $"WhSnap {manifest.Version} 已下载并通过 SHA-256 校验。\n\n{installer}\n\n"
+                + "现在安装吗？（会先退出 WhSnap；安装完成后可重新启动）",
+                "WhSnap 更新",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Question);
+
+            if (choice != System.Windows.MessageBoxResult.Yes)
+            {
+                _tray?.ShowBalloon("更新包已就绪", $"可稍后手动运行：{installer}");
+                return;
+            }
+
+            InstallUpdateAndExit(installer);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("下载或安装更新失败", ex);
+
+            if (!silentOnFailure)
+            {
+                _tray?.ShowBalloon("更新失败", $"{ex.GetType().Name}: {ex.Message}", warning: true);
+            }
+        }
+    }
+
+    /// <summary>设置「维护」页的「下载并安装」：与托盘路径共用同一套下载/校验/退出逻辑。</summary>
+    private async Task<string> InstallUpdateFromSettingsAsync(UpdateManifest manifest)
+    {
+        if (_updater is null)
+        {
+            return "更新服务不可用。";
+        }
+
+        _tray?.ShowBalloon("正在下载更新", $"WhSnap {manifest.Version} 下载中，完成后会校验 SHA-256。");
+        string installer = await _updater.DownloadAsync(manifest);
+
+        var choice = System.Windows.MessageBox.Show(
+            $"WhSnap {manifest.Version} 已下载并通过 SHA-256 校验。\n\n{installer}\n\n"
+            + "现在安装吗？（会先退出 WhSnap；安装完成后可重新启动）",
+            "WhSnap 更新",
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Question);
+
+        if (choice != System.Windows.MessageBoxResult.Yes)
+        {
+            return $"已下载并校验通过：{installer}（未安装，可稍后手动运行）。";
+        }
+
+        InstallUpdateAndExit(installer);
+        return "正在启动安装程序，WhSnap 即将退出…";
+    }
+
+    /// <summary>启动静默安装并退出自身——安装器要替换的正是当前正在运行的程序文件。</summary>
+    private void InstallUpdateAndExit(string installerPath)
+    {
+        UpdateService.LaunchInstaller(installerPath);
+        Log.Info("更新安装已启动，WhSnap 即将退出以便替换程序文件。");
+        Shutdown(0);
+    }
+
     private string BuildDiagnostics()
     {
         var builder = new System.Text.StringBuilder();
         var monitors = _capture is null ? [] : PinMonitorList();
 
-        builder.AppendLine($"版本　　　　WhSnap 0.5.0-preview.1（{Environment.OSVersion.VersionString}）");
+        builder.AppendLine($"版本　　　　WhSnap {UpdateService.GetCurrentVersion()}（{Environment.OSVersion.VersionString}）");
         builder.AppendLine($"进程　　　　{(Environment.Is64BitProcess ? "x64" : "x86")}　PID {Environment.ProcessId}");
         builder.AppendLine($"虚拟桌面　　{_pins?.Desktop}　显示器 {monitors.Count} 台");
         builder.AppendLine($"最近后端　　{_settings?.Current.CaptureBackend}");
@@ -646,9 +820,10 @@ public partial class App : System.Windows.Application
     {
         _tray?.ShowBalloon(
             "关于 WhSnap",
-            "WhSnap 0.2.0-preview　对标 Snipaste 的 Windows 截图贴图工具。"
+            $"WhSnap {UpdateService.GetCurrentVersion()}　对标 Snipaste 的 Windows 截图贴图工具。"
             + "当前能力：全局热键截图、多屏遮罩、像素级微调、放大镜、贴图（缩放/旋转/翻转/透明度/穿透/缩略图/备份恢复）、"
-            + "从剪贴板贴图（图像/文件/HTML/颜色/文本）、贴图管理面板。");
+            + "从剪贴板贴图（图像/文件/HTML/颜色/文本）、贴图管理面板、标注、元素检测、取色器；"
+            + "更新可在托盘「检查更新…」或设置「维护」页手动检查。");
     }
 
     private static void OpenFolder(string path, string title)

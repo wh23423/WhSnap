@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text;
+using System.Threading;
 using System.Windows.Input;
 using System.Windows.Threading;
 using WhSnap.Core;
@@ -194,6 +195,174 @@ internal static class SettingsTestCommand
                 return;
             });
 
+            // ---- 更新链路是否真的可达（M6 第 4 项：已实现但没有入口 = 用户视角不存在）----
+
+            Check("维护页显示当前版本号", () =>
+            {
+                string version = UpdateService.GetCurrentVersion();
+                string text = window!.MaintenanceVersionText;
+
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    throw new InvalidOperationException("维护页没有显示任何版本信息。");
+                }
+
+                if (!text.Contains(version, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        $"维护页版本串里没有程序集版本 {version}：{text.Replace("\n", "　")}");
+                }
+
+                log.AppendLine($"       {text.Replace("\n", "　|　")}");
+            });
+
+            Check("维护页有「检查更新」与「下载并安装」入口", () =>
+            {
+                if (!window!.HasUpdateEntry)
+                {
+                    throw new InvalidOperationException("维护页缺少更新入口按钮。");
+                }
+
+                if (window.CanInstallUpdate)
+                {
+                    throw new InvalidOperationException("还没检查到新版本，「下载并安装」不该是可用的。");
+                }
+            });
+
+            Check("本地清单 → 维护页状态显示发现新版本 9.9.9（异步、不阻塞 UI 线程）", () =>
+            {
+                string dir = Path.Combine(Path.GetTempPath(), "whsnap-settings-update");
+                Directory.CreateDirectory(dir);
+                string original = settings.Current.UpdateManifestUrl;
+
+                try
+                {
+                    string payload = Path.Combine(dir, "WhSnap-9.9.9-setup.exe");
+                    File.WriteAllBytes(payload, new byte[4096]);
+                    string hash = Sha256Util.ComputeFile(payload);
+
+                    var manifest = new UpdateManifest
+                    {
+                        Version = "9.9.9",
+                        Channel = UpdateChannels.Stable,
+                        Url = payload,
+                        Sha256 = hash,
+                        Size = new FileInfo(payload).Length,
+                        Notes = "设置页自检用清单",
+                    };
+
+                    string manifestPath = Path.Combine(dir, "update.json");
+                    File.WriteAllText(manifestPath, manifest.ToJson(), new UTF8Encoding(false));
+
+                    settings.Current.UpdateManifestUrl = manifestPath;
+                    window!.Updater = new UpdateCoordinator(settings);
+
+                    // 宿主注入的"下载并安装"（真实实现会下载→校验→询问→退出自身；自检只验证链路接通）
+                    string? installedVersion = null;
+                    window.InstallUpdate = candidate =>
+                    {
+                        installedVersion = candidate.Version;
+                        return Task.FromResult($"（自检）已按宿主约定处理 {candidate.Version} 的安装。");
+                    };
+
+                    // 用"边抽 Dispatcher 边等"的方式等待：如果实现又在 UI 线程上同步阻塞，这里会超时失败
+                    string status = AwaitWithPump(window.RunUpdateCheckAsync());
+
+                    if (!status.Contains("9.9.9", StringComparison.Ordinal))
+                    {
+                        throw new InvalidOperationException($"检查结论里没有报出新版本：{status}");
+                    }
+
+                    if (!window.UpdateStatusText.Contains("9.9.9", StringComparison.Ordinal))
+                    {
+                        throw new InvalidOperationException($"结论没有写进界面：{window.UpdateStatusText}");
+                    }
+
+                    if (!window.CanInstallUpdate)
+                    {
+                        throw new InvalidOperationException("检查到新版本后「下载并安装」仍然不可用。");
+                    }
+
+                    // 「下载并安装」必须真的把清单交给宿主
+                    string installStatus = AwaitWithPump(window.RunUpdateInstallAsync());
+                    if (installedVersion != "9.9.9" || !installStatus.Contains("9.9.9", StringComparison.Ordinal))
+                    {
+                        throw new InvalidOperationException(
+                            $"「下载并安装」没有把新版本交给宿主：version={installedVersion ?? "null"}，状态={installStatus}");
+                    }
+
+                    log.AppendLine($"       {status}");
+                    log.AppendLine($"       {installStatus}");
+                }
+                finally
+                {
+                    settings.Current.UpdateManifestUrl = original;
+                    settings.Save();
+
+                    try
+                    {
+                        Directory.Delete(dir, recursive: true);
+                    }
+                    catch
+                    {
+                        // 临时目录清理失败不影响结论
+                    }
+                }
+            });
+
+            Check("清单缺失 / 损坏 / 地址非法都给出失败原因，不抛异常", () =>
+            {
+                string dir = Path.Combine(Path.GetTempPath(), "whsnap-settings-update-bad");
+                Directory.CreateDirectory(dir);
+                string original = settings.Current.UpdateManifestUrl;
+
+                try
+                {
+                    window!.Updater = new UpdateCoordinator(settings);
+
+                    settings.Current.UpdateManifestUrl = Path.Combine(dir, "not-found.json");
+                    string missing = AwaitWithPump(window.RunUpdateCheckAsync());
+                    if (!missing.Contains("不可读", StringComparison.Ordinal))
+                    {
+                        throw new InvalidOperationException($"缺失清单的提示不符：{missing}");
+                    }
+
+                    string broken = Path.Combine(dir, "broken.json");
+                    File.WriteAllText(broken, "{ this is not json", new UTF8Encoding(false));
+                    settings.Current.UpdateManifestUrl = broken;
+                    string malformed = AwaitWithPump(window.RunUpdateCheckAsync());
+                    if (!malformed.Contains("无法解析", StringComparison.Ordinal))
+                    {
+                        throw new InvalidOperationException($"损坏清单的提示不符：{malformed}");
+                    }
+
+                    // 地址本身非法：HttpClient 会直接抛，必须被兜住并变成可读文字
+                    settings.Current.UpdateManifestUrl = "http://";
+                    string invalid = AwaitWithPump(window.RunUpdateCheckAsync());
+                    if (!invalid.Contains("检查更新失败", StringComparison.Ordinal))
+                    {
+                        throw new InvalidOperationException($"非法地址应给出「检查更新失败」：{invalid}");
+                    }
+
+                    log.AppendLine($"       缺失：{missing}");
+                    log.AppendLine($"       损坏：{malformed}");
+                }
+                finally
+                {
+                    settings.Current.UpdateManifestUrl = original;
+                    settings.Save();
+
+                    try
+                    {
+                        Directory.Delete(dir, recursive: true);
+                    }
+                    catch
+                    {
+                        // 临时目录清理失败不影响结论
+                    }
+                }
+            });
+
             log.AppendLine(new string('-', 68));
             log.AppendLine(failures.Count == 0
                 ? "结论：通过。"
@@ -222,6 +391,29 @@ internal static class SettingsTestCommand
         {
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Background);
         }
+    }
+
+    /// <summary>
+    /// 等待一个"续体需要回到 UI 线程"的任务，同时保持 UI 线程可被派发。
+    /// 直接 <c>GetAwaiter().GetResult()</c> 会在 UI 线程上制造死锁（进度快照 §7 第 7 条），
+    /// 所以这里边抽 Dispatcher 边等；超时即判定"又阻塞 UI 线程了"。
+    /// </summary>
+    private static T AwaitWithPump<T>(Task<T> task, int seconds = 20)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(seconds);
+
+        while (!task.IsCompleted && DateTime.UtcNow < deadline)
+        {
+            Pump();
+            Thread.Sleep(15);
+        }
+
+        if (!task.IsCompleted)
+        {
+            throw new TimeoutException($"异步操作 {seconds} 秒内未完成——疑似又在 UI 线程上同步阻塞等待。");
+        }
+
+        return task.GetAwaiter().GetResult();
     }
 
     private static void Write(StringBuilder log)

@@ -13,6 +13,7 @@ internal sealed class TrayHost : IDisposable
     private readonly System.Windows.Forms.ToolStripMenuItem _clipboardPinItem;
     private readonly System.Windows.Forms.ToolStripMenuItem _panelItem;
     private readonly System.Windows.Forms.ToolStripMenuItem _recentColorsItem;
+    private readonly System.Windows.Forms.ToolStripMenuItem _checkUpdatesItem;
     private bool _suppressAutoStartEvent;
 
     public TrayHost(string hotkeyText, bool autoStartEnabled)
@@ -48,6 +49,9 @@ internal sealed class TrayHost : IDisposable
 
         var settings = new System.Windows.Forms.ToolStripMenuItem("设置…");
         settings.Click += (_, _) => SettingsRequested?.Invoke();
+
+        _checkUpdatesItem = new System.Windows.Forms.ToolStripMenuItem("检查更新…");
+        _checkUpdatesItem.Click += (_, _) => CheckUpdatesRequested?.Invoke();
 
         var picker = new System.Windows.Forms.ToolStripMenuItem("取色器（取色并复制）");
         picker.Click += (_, _) => PickerRequested?.Invoke();
@@ -92,6 +96,7 @@ internal sealed class TrayHost : IDisposable
         menu.Items.Add(openConfigFolder);
         menu.Items.Add(_autoStartItem);
         menu.Items.Add(settings);
+        menu.Items.Add(_checkUpdatesItem);
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add(about);
         menu.Items.Add(exit);
@@ -132,6 +137,9 @@ internal sealed class TrayHost : IDisposable
 
     public event Action? SettingsRequested;
 
+    /// <summary>托盘「检查更新…」：手动检查一次（含下载与安装确认）。</summary>
+    public event Action? CheckUpdatesRequested;
+
     /// <summary>托盘「取色器」：开始一次只取色的截图会话。</summary>
     public event Action? PickerRequested;
 
@@ -142,6 +150,12 @@ internal sealed class TrayHost : IDisposable
     public event Action? ClearColorHistoryRequested;
 
     public void UpdateHotkeyText(string hotkeyText) => _captureItem.Text = $"截图\t{hotkeyText}";
+
+    /// <summary>自检用：「检查更新…」菜单项的当前文案（用户可达性的机器证据）。</summary>
+    internal string CheckUpdatesItemText => _checkUpdatesItem.Text ?? string.Empty;
+
+    /// <summary>自检用：模拟点击「检查更新…」，验证菜单项确实把事件抛给宿主。</summary>
+    internal void SimulateCheckUpdatesClick() => _checkUpdatesItem.PerformClick();
 
     /// <summary>贴图数量与剪贴板监听状态直接写在菜单上，避免"不知道现在有几张贴图"。</summary>
     public void SyncPinState(int pinCount, bool clipboardWatcherRunning)

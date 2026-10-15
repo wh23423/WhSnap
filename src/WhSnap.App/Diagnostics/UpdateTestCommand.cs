@@ -245,6 +245,65 @@ internal static class UpdateTestCommand
                     throw new InvalidOperationException("安装启动信息不正确。");
                 }
             });
+
+            // 这一段专门守住"配置面上有开关、代码里没人读"的缺口（M6 第 4 项之前的实际状态）
+            Check("更新配置项被运行时消费（清单地址 / 通道 / 启动开关 / 自动下载）", () =>
+            {
+                string manifestPath = WriteManifest(workDir, "update-settings.json", "9.9.9", "beta", payloadPath, payloadHash, payloadSize, string.Empty);
+
+                var settings = new SettingsService();
+                settings.Load();
+
+                string originalUrl = settings.Current.UpdateManifestUrl;
+                string originalChannel = settings.Current.UpdateChannel;
+                bool originalStartup = settings.Current.CheckForUpdatesOnStartup;
+                bool originalAutoDownload = settings.Current.UpdateAutoDownload;
+
+                try
+                {
+                    settings.Current.UpdateManifestUrl = manifestPath;
+                    settings.Current.UpdateChannel = "beta";
+                    settings.Current.CheckForUpdatesOnStartup = false;
+                    settings.Current.UpdateAutoDownload = true;
+
+                    var coordinator = new UpdateCoordinator(settings);
+
+                    if (coordinator.ManifestSource != manifestPath || coordinator.Channel != UpdateChannels.Beta)
+                    {
+                        throw new InvalidOperationException(
+                            $"清单地址/通道没有被消费：{coordinator.ManifestSource} / {coordinator.Channel}");
+                    }
+
+                    if (coordinator.StartupCheckEnabled || !coordinator.AutoDownloadEnabled)
+                    {
+                        throw new InvalidOperationException(
+                            $"启动检查({coordinator.StartupCheckEnabled}) / 自动下载({coordinator.AutoDownloadEnabled}) 开关没有被消费。");
+                    }
+
+                    if (string.IsNullOrWhiteSpace(coordinator.CurrentVersion) || coordinator.CurrentVersion != UpdateService.GetCurrentVersion())
+                    {
+                        throw new InvalidOperationException($"版本号不可读：{coordinator.CurrentVersion}");
+                    }
+
+                    // 本自检整体跑在线程池上，这里同步等待是安全的（不会死锁）；
+                    // 顺带验证"按配置构造的服务"真的能跑完一次检查。
+                    var result = coordinator.CheckAsync().GetAwaiter().GetResult();
+                    if (!result.CanUpdate)
+                    {
+                        throw new InvalidOperationException($"按当前配置检查未发现可更新版本：{result.Message}");
+                    }
+
+                    report.AppendLine($"       版本 {coordinator.CurrentVersion}，通道 {coordinator.Channel}，清单 {coordinator.ManifestSource}");
+                }
+                finally
+                {
+                    settings.Current.UpdateManifestUrl = originalUrl;
+                    settings.Current.UpdateChannel = originalChannel;
+                    settings.Current.CheckForUpdatesOnStartup = originalStartup;
+                    settings.Current.UpdateAutoDownload = originalAutoDownload;
+                    settings.Save();
+                }
+            });
         }
         catch (Exception ex)
         {

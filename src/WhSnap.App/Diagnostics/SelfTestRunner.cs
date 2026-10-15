@@ -26,7 +26,7 @@ internal static class SelfTestRunner
         var failures = new List<string>();
 
         report.AppendLine($"WhSnap 自检　{DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-        report.AppendLine($"版本 0.5.0-preview.1　进程 {(Environment.Is64BitProcess ? "x64" : "x86")}");
+        report.AppendLine($"版本 {UpdateService.GetCurrentVersion()}　进程 {(Environment.Is64BitProcess ? "x64" : "x86")}");
         report.AppendLine(new string('-', 68));
 
         void Check(string name, Func<string> body)
@@ -347,6 +347,52 @@ internal static class SelfTestRunner
             bool enabled = AutoStartService.IsEnabled();
             bool consistent = AutoStartService.IsConsistent();
             return $"已启用={enabled}，注册表路径一致={consistent}（自启项由安装包默认写入，程序仅在缺失时补写）";
+        });
+
+        Check("更新链路已进用户可达路径（版本可读 + 4 个配置项被消费）", () =>
+        {
+            var settings = new SettingsService();
+            settings.Load();
+            var updater = new UpdateCoordinator(settings);
+
+            string version = updater.CurrentVersion;
+            if (string.IsNullOrWhiteSpace(version) || version == "0.0.0")
+            {
+                throw new InvalidOperationException("读不到程序版本号（设置维护页与「关于」都靠它）。");
+            }
+
+            if (updater.ManifestSource != settings.Current.UpdateManifestUrl
+                || updater.Channel != UpdateChannels.Parse(settings.Current.UpdateChannel))
+            {
+                throw new InvalidOperationException(
+                    $"更新配置项没有被运行时消费：清单 {updater.ManifestSource}、通道 {updater.Channel}");
+            }
+
+            string kind = UpdateService.ResolveSourceKind(updater.ManifestSource) == UpdateSourceKind.LocalFile ? "本地路径" : "https";
+
+            return $"当前版本 {version}；通道 {updater.Channel}；启动检查 {updater.StartupCheckEnabled}；"
+                   + $"自动下载 {updater.AutoDownloadEnabled}；清单 {kind}（入口：启动检查 / 托盘「检查更新…」/ 设置维护页）";
+        });
+
+        Check("托盘「检查更新…」入口可达（点击真的会通知宿主）", () =>
+        {
+            using var tray = new WhSnap.Tray.TrayHost("F1", autoStartEnabled: false);
+            int fired = 0;
+            tray.CheckUpdatesRequested += () => fired++;
+
+            string text = tray.CheckUpdatesItemText;
+            if (string.IsNullOrWhiteSpace(text) || !text.Contains("更新", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException($"托盘菜单里找不到「检查更新…」入口，实际文案：{text}");
+            }
+
+            tray.SimulateCheckUpdatesClick();
+            if (fired != 1)
+            {
+                throw new InvalidOperationException($"点击「检查更新…」后宿主收到 {fired} 次请求，期望 1 次。");
+            }
+
+            return $"菜单项「{text}」→ 宿主收到 1 次检查请求";
         });
 
         Check("选区编辑（绝对坐标 / 微调 / 手柄 / 放大镜）", () =>

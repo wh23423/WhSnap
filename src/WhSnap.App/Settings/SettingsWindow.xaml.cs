@@ -33,6 +33,12 @@ internal partial class SettingsWindow : Window
     private IReadOnlyList<HotkeyRegistrationResult> _probeResults = [];
     private bool _building;
 
+    private TextBlock? _versionText;
+    private TextBlock? _updateStatusText;
+    private Button? _checkUpdatesButton;
+    private Button? _installUpdateButton;
+    private UpdateCheckResult? _lastUpdateResult;
+
     public SettingsWindow(SettingsService settings)
     {
         InitializeComponent();
@@ -61,6 +67,15 @@ internal partial class SettingsWindow : Window
 
     /// <summary>清理贴图备份（维护页按钮）。</summary>
     public Action? ClearPinBackups { get; set; }
+
+    /// <summary>更新链路（宿主注入）。为空时维护页会如实说"更新服务不可用"，而不是假装能检查。</summary>
+    public UpdateCoordinator? Updater { get; set; }
+
+    /// <summary>
+    /// 维护页「下载并安装」的实现（宿主负责：下载 → 校验 → 询问 → 安装并退出自身）。
+    /// 返回值是直接显示给用户的状态文字。
+    /// </summary>
+    public Func<UpdateManifest, Task<string>>? InstallUpdate { get; set; }
 
     /// <summary>配置发生变化（宿主可据此刷新托盘文案等）。</summary>
     public event Action? SettingsChanged;
@@ -105,6 +120,18 @@ internal partial class SettingsWindow : Window
     /// <summary>取某行的状态徽标文字（自检用它验证冲突判定确实显示出来了）。</summary>
     internal string StatusBadgeFor(string actionId) =>
         _hotkeyRows.FirstOrDefault(row => row.Definition.Id == actionId)?.StatusText.Text ?? string.Empty;
+
+    /// <summary>维护页显示的版本串（自检断言"维护页真的显示了版本号"）。</summary>
+    internal string MaintenanceVersionText => _versionText?.Text ?? string.Empty;
+
+    /// <summary>维护页的更新结果文字（自检断言检查结论真的写进了界面）。</summary>
+    internal string UpdateStatusText => _updateStatusText?.Text ?? string.Empty;
+
+    /// <summary>维护页是否有「检查更新」与「下载并安装」入口。</summary>
+    internal bool HasUpdateEntry => _checkUpdatesButton is not null && _installUpdateButton is not null;
+
+    /// <summary>「下载并安装」当前是否可用（检查到新版本后才放开）。</summary>
+    internal bool CanInstallUpdate => _installUpdateButton?.IsEnabled == true;
 
     // ---------------------------------------------------------------- 界面构建
 
@@ -861,6 +888,47 @@ internal partial class SettingsWindow : Window
         panel.Children.Add(new TextBlock { Text = "运行状态", FontWeight = FontWeights.Bold, FontSize = 13, Margin = new Thickness(0, 0, 0, 6) });
         panel.Children.Add(diagnostics);
 
+        panel.Children.Add(new TextBlock { Text = "更新", FontWeight = FontWeights.Bold, FontSize = 13, Margin = new Thickness(0, 12, 0, 6) });
+
+        _versionText = new TextBlock
+        {
+            Text = VersionSummary(),
+            FontFamily = new FontFamily("Consolas, Microsoft YaHei UI"),
+        };
+
+        panel.Children.Add(_versionText);
+
+        var updateButtons = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
+
+        _checkUpdatesButton = new Button { Content = "检查更新", Margin = new Thickness(0, 0, 6, 6) };
+        _checkUpdatesButton.Click += async (_, _) => await RunUpdateCheckAsync();
+
+        _installUpdateButton = new Button { Content = "下载并安装", Margin = new Thickness(0, 0, 6, 6), IsEnabled = false };
+        _installUpdateButton.Click += async (_, _) => await RunUpdateInstallAsync();
+
+        updateButtons.Children.Add(_checkUpdatesButton);
+        updateButtons.Children.Add(_installUpdateButton);
+        panel.Children.Add(updateButtons);
+
+        _updateStatusText = new TextBlock
+        {
+            Text = "尚未检查更新。",
+            Foreground = new SolidColorBrush(Color.FromRgb(0x9A, 0x9A, 0x9A)),
+            Margin = new Thickness(0, 4, 0, 0),
+        };
+
+        panel.Children.Add(_updateStatusText);
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = "检查更新只读取一份很小的 update.json（版本 / 下载地址 / SHA-256），不上报任何本机信息；"
+                   + "下载后先校验 SHA-256，对不上就删除并拒绝安装。安装会先退出 WhSnap，再静默运行安装包"
+                   + "（per-user 安装，不需要管理员权限）。",
+            Foreground = new SolidColorBrush(Color.FromRgb(0x9A, 0x9A, 0x9A)),
+            FontSize = 11,
+            Margin = new Thickness(0, 8, 0, 0),
+        });
+
         panel.Children.Add(new TextBlock { Text = "维护", FontWeight = FontWeights.Bold, FontSize = 13, Margin = new Thickness(0, 12, 0, 6) });
 
         var buttons = new WrapPanel();
@@ -902,6 +970,114 @@ internal partial class SettingsWindow : Window
         var button = new Button { Content = content, Margin = new Thickness(0, 0, 6, 6) };
         button.Click += (_, _) => action();
         return button;
+    }
+
+    /// <summary>维护页顶部的版本串：版本号 + 通道 + 清单来源（本地路径 / https 一眼可辨）。</summary>
+    private string VersionSummary()
+    {
+        string version = Updater?.CurrentVersion ?? UpdateService.GetCurrentVersion();
+        string channel = Updater?.Channel ?? UpdateChannels.Parse(Settings.UpdateChannel);
+        string source = Updater?.ManifestSource ?? Settings.UpdateManifestUrl;
+        string kind = UpdateService.ResolveSourceKind(source) == UpdateSourceKind.LocalFile ? "本地路径" : "https";
+
+        return $"当前版本　WhSnap {version}（{channel} 通道）\n更新清单　{kind}：{source}";
+    }
+
+    /// <summary>
+    /// 检查更新并把结论写进维护页。自检直接调用它（与按钮同一条路径），
+    /// 因此"按钮 → 检查 → 状态文字"这条链路是被机器验证过的。
+    /// </summary>
+    internal async Task<string> RunUpdateCheckAsync()
+    {
+        if (Updater is null)
+        {
+            SetInstallEnabled(false);
+            return SetUpdateStatus("更新服务不可用。");
+        }
+
+        SetUpdateStatus("正在检查更新…");
+        SetInstallEnabled(false);
+
+        if (_checkUpdatesButton is not null)
+        {
+            _checkUpdatesButton.IsEnabled = false;
+        }
+
+        try
+        {
+            var result = await Updater.CheckAsync();
+            _lastUpdateResult = result;
+
+            if (result is { CanUpdate: true, Manifest: not null })
+            {
+                // UpdateRules 给出的原因本身就含"发现新版本 x.y.z（当前 …）：更新说明"，直接呈现
+                SetInstallEnabled(InstallUpdate is not null);
+                return SetUpdateStatus(result.Message);
+            }
+
+            return SetUpdateStatus(result.Message);
+        }
+        catch (Exception ex)
+        {
+            // 正常情况下 UpdateCoordinator 不会抛（失败已转成原因文字），这里是最后一道兜底
+            Log.Error("检查更新失败", ex);
+            return SetUpdateStatus($"检查更新失败：{ex.GetType().Name}: {ex.Message}");
+        }
+        finally
+        {
+            if (_checkUpdatesButton is not null)
+            {
+                _checkUpdatesButton.IsEnabled = true;
+            }
+        }
+    }
+
+    /// <summary>维护页「下载并安装」：下载/校验/询问/退出自身都由宿主实现，这里只负责显示状态。</summary>
+    internal async Task<string> RunUpdateInstallAsync()
+    {
+        var manifest = _lastUpdateResult is { CanUpdate: true, Manifest: not null } result ? result.Manifest : null;
+
+        if (manifest is null)
+        {
+            return SetUpdateStatus("没有可安装的更新，请先点「检查更新」。");
+        }
+
+        if (InstallUpdate is null)
+        {
+            return SetUpdateStatus("更新服务不可用。");
+        }
+
+        SetInstallEnabled(false);
+        SetUpdateStatus($"正在下载 WhSnap {manifest.Version} 并校验 SHA-256…");
+
+        try
+        {
+            return SetUpdateStatus(await InstallUpdate(manifest));
+        }
+        catch (Exception ex)
+        {
+            Log.Error("下载或安装更新失败", ex);
+            SetInstallEnabled(true);
+            return SetUpdateStatus($"更新失败：{ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private string SetUpdateStatus(string text)
+    {
+        if (_updateStatusText is not null)
+        {
+            _updateStatusText.Text = text;
+        }
+
+        return text;
+    }
+
+    private void SetInstallEnabled(bool enabled)
+    {
+        if (_installUpdateButton is not null)
+        {
+            _installUpdateButton.IsEnabled = enabled;
+        }
     }
 
     private static void OpenPath(string path)
