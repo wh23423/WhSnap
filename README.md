@@ -1,6 +1,6 @@
 # WhSnap
 
-对标 Snipaste 的 Windows 截图 / 贴图工具。当前处于 **预览版（0.5.0-preview）**，按里程碑逐步推进。
+对标 Snipaste 的 Windows 截图 / 贴图工具。当前版本 **`v1.0.0-preview.1`**（功能与发布工程已完成，见文末「里程碑」）。
 
 - 项目规划方案：[docs/whsnap-项目规划方案.md](docs/whsnap-项目规划方案.md)
 - 用户手册：[docs/whsnap-用户手册.md](docs/whsnap-用户手册.md)（安装、热键全表、47 项设置说明、操作与疑难；装完也会出现在应用目录与开始菜单）
@@ -484,9 +484,41 @@ Get-Content "$env:TEMP\whsnap-diagnostics-pack.txt" -Encoding UTF8   # 打印 zi
 发布流程：打标签 → GitHub Actions 自动构建并创建 Release。
 
 ```powershell
-git tag v0.5.0
-git push origin v0.5.0
+git tag v1.0.0-preview.1
+git push origin v1.0.0-preview.1
 ```
+
+### 发布清单 `update.json` 与 Release 资产
+
+`build-installer.ps1` 编译完安装包后**顺手生成 `artifacts/installer/update.json`**（自更新清单）：
+
+```jsonc
+{
+  "SchemaVersion": 1,
+  "Version": "1.0.0-preview.1",
+  "Channel": "beta",                 // 版本号带横线（预览版）→ beta，否则 stable
+  "Url": "…/WhSnap-1.0.0-preview.1-setup-x64.exe",
+  "Sha256": "…",                     // 取自刚编译出的安装包
+  "Size": 53585340,
+  "PublishedAtUtc": "2026-10-15T14:20:00Z",
+  "Notes": "WhSnap 1.0.0-preview.1",
+  "MinimumVersion": ""
+}
+```
+
+- 打 tag 时 CI 传 `-ReleaseBaseUrl`，`Url` 指向该 tag 的 Release 资产；本地构建不给这个参数时 `Url` 是本地绝对路径（离线分发/共享目录用）。
+- CI 的 Release 与 artifact 都会带上：安装包、`update.json`、`install-trust.ps1`、`WhSnap.cer`（证书没生成时自动跳过）。
+
+**验证清单是对的**（本地、不联网，会真的下载并校验哈希）：
+
+```powershell
+& src\WhSnap.App\bin\Release\net8.0-windows10.0.22000.0\WhSnap.exe --update-test --manifest artifacts\installer\update.json
+Get-Content "$env:TEMP\whsnap-update-test.txt" -Encoding UTF8 | Select-Object -Last 12
+```
+
+**tag 策略提醒**：程序默认的清单地址是 `…/releases/latest/download/update.json`，GitHub 的 `latest` **不包含标记为 pre-release 的版本**。
+所以想让自动更新跟到最新 preview，就把 Release 作为普通 Release 发布（本仓库 CI 默认如此），
+由清单里的 `Channel` 决定谁能收到（stable 通道会拒绝 beta 清单并给出原因）。
 
 ### 安装包行为（per-user，免 UAC）
 
@@ -573,6 +605,14 @@ build/
 
 M0 预研与骨架 ✅ → M1 截图核心 ✅（多屏遮罩、WGC/DXGI/GDI）→ M2 贴图 ✅（`v0.2.0-preview`）→
 M3 快捷键设置与全配置化 ✅（`v0.3.0-preview`）→ M4 全量标注 ✅（`v0.4.0-preview`）→
-**M5 对标收尾 ✅**（`v0.5.0-preview`：元素检测、取色器与颜色历史、托盘细化）→ M6 发布工程化（进行中）。
+M5 对标收尾 ✅（`v0.5.0-preview`：元素检测、取色器与颜色历史、托盘细化）→
+**M6 发布工程化 ✅（`v1.0.0-preview.1`）**：自动更新、诊断包、崩溃转储、性能埋点（§2.2 四项达标）、
+安装包完善、用户手册、`update.json` 与 CI 资产。
 
-详见 [项目规划方案](docs/whsnap-项目规划方案.md)。
+**当前状态**：功能与发布工程均已完成，`v1.0.0-preview.1` 安装包已在本机通过安装 / 覆盖安装 / 卸载三连测
+（含用户数据保留与 `/DELUSERDATA` 删除两个分支）。唯一还没跑过的是 **CI**：仓库尚未推远端，
+`git remote` 为空、也没有 tag，所以 GitHub Actions 从未执行过（推上去打 tag 即可验证）。
+
+未在真机验证的两项：真实双屏（尤其混合缩放比）的鼠标捕获跨屏移交、HDR/宽色域下的截图表现。
+
+详见 [项目规划方案](docs/whsnap-项目规划方案.md)（§18 为 M6 交付验收记录）。

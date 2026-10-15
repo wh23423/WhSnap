@@ -1,6 +1,6 @@
 # WhSnap 用户手册
 
-> 适用版本：**0.5.0-preview.1**（Windows 11，最低 10.0.22000）｜ 对标 Snipaste 的 Windows 截图 / 贴图工具
+> 适用版本：**1.0.0-preview.1**（Windows 11，最低 10.0.22000）｜ 对标 Snipaste 的 Windows 截图 / 贴图工具
 >
 > 本手册里的名称都取自程序本体：快捷键与「设置 → 快捷键」页的动作名一致，
 > 配置项与「设置」窗口里的分组/标签一致，菜单与托盘/贴图右键菜单逐项对应。
@@ -36,7 +36,7 @@
 只想静默装（脚本/批量）：
 
 ```powershell
-.\WhSnap-0.5.0-preview.1-setup-x64.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+.\WhSnap-1.0.0-preview.1-setup-x64.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ```
 
 安装日志在 `%TEMP%\Setup Log *.txt`，装完有异常先看它。
