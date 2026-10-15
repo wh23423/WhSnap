@@ -91,6 +91,35 @@ public static class SettingsSchema
         new("TextPinForeground", "文本贴图", "前景色", SettingKind.Color, "支持 #RGB / #RRGGBB / rgb() / hsl()。"),
         new("TextPinBackground", "文本贴图", "背景色", SettingKind.Color, string.Empty),
 
+        // ---- 标注 ----
+        new("AnnotationDefaultTool", "标注", "默认工具", SettingKind.Choice, "打开标注编辑器时选中的工具。",
+            Options:
+            [
+                new("select", "选择 / 移动"),
+                new("rectangle", "矩形"),
+                new("ellipse", "椭圆"),
+                new("line", "直线"),
+                new("arrow", "箭头"),
+                new("pencil", "铅笔"),
+                new("marker", "马克笔"),
+                new("text", "文字"),
+                new("mosaic", "马赛克"),
+                new("blur", "模糊"),
+                new("eraser", "橡皮擦"),
+                new("badge", "序号"),
+                new("highlight", "高亮"),
+            ]),
+        new("AnnotationStrokeColor", "标注", "默认颜色", SettingKind.Color, "工具栏也可以随时换色（1-8 快捷键）。"),
+        new("AnnotationStrokeWidth", "标注", "默认线宽", SettingKind.Int, "`[` / `]` 可临时调整。", 1, 64, 1, "px"),
+        new("AnnotationFillOpacity", "标注", "矩形/椭圆填充不透明度", SettingKind.Int, "0 = 不填充。", 0, 100, 5, "%"),
+        new("AnnotationFontSize", "标注", "文字/序号字号", SettingKind.Double, "按物理像素渲染。", 8, 72, 1, "px"),
+        new("AnnotationMosaicBlock", "标注", "马赛克块大小", SettingKind.Int, "越大越糊。", 2, 64, 1, "px"),
+        new("AnnotationBlurRadius", "标注", "模糊半径", SettingKind.Int, "盒式模糊半径（两趟可分离，近似高斯）。", 1, 64, 1, "px"),
+        new("AnnotationEraserRadius", "标注", "橡皮擦半径", SettingKind.Int, string.Empty, 1, 64, 1, "px"),
+        new("AnnotationBadgeStart", "标注", "序号起始值", SettingKind.Int, string.Empty, 1, 999, 1, string.Empty),
+        new("AnnotationPalette", "标注", "调色板", SettingKind.Text,
+            "逗号分隔的颜色列表，显示为工具栏上的色块；支持 #RGB / #RRGGBB / rgb() / hsl()。"),
+
         // ---- 系统集成 ----
         new("AutoStart", "系统", "开机自启", SettingKind.Bool, "随 Windows 登录自动启动（per-user，无需管理员）。"),
         new("HotkeyConflictPolicy", "系统", "热键冲突处理", SettingKind.Choice,

@@ -239,6 +239,42 @@ internal static class OverlayTestCommand
 
         log.AppendLine("确认动作直达键位：F3 → 只贴图（已验证），Ctrl+C → 只复制（已识别，会话已结束不再重复确认）");
 
+        // T → 进入标注：应当把选区交给宿主并关闭遮罩，但**既不算确认、也不算取消**
+        var annotateSession = new OverlaySession(frame, right, settings);
+        BitmapSource? handedImage = null;
+        PhysicalRect handedRect = default;
+        bool annotateConfirmed = false;
+        bool annotateCancelled = false;
+
+        annotateSession.Confirmed += (_, _, _) => annotateConfirmed = true;
+        annotateSession.Cancelled += () => annotateCancelled = true;
+        annotateSession.AnnotateRequested += (image, rect) =>
+        {
+            handedImage = image;
+            handedRect = rect;
+        };
+
+        annotateSession.OnPointerPressed(from, 1);
+        annotateSession.OnPointerMoved(to);
+        annotateSession.OnPointerReleased();
+
+        if (!annotateSession.HandleKey(Key.T, ModifierKeys.None))
+        {
+            throw new InvalidOperationException("T 未被遮罩会话识别为「进入标注」。");
+        }
+
+        if (annotateConfirmed || annotateCancelled)
+        {
+            throw new InvalidOperationException("进入标注不应被当成确认或取消。");
+        }
+
+        if (handedImage is null || handedRect.Width != 3000 || handedImage.PixelWidth != handedRect.Width)
+        {
+            throw new InvalidOperationException($"进入标注时交出的选区不正确：rect={handedRect}，image={handedImage?.PixelWidth}x{handedImage?.PixelHeight}。");
+        }
+
+        log.AppendLine($"进入标注（T）：交出 {handedRect} / {handedImage.PixelWidth}x{handedImage.PixelHeight}，会话未产生确认或取消");
+
         try
         {
             session.Cancel();

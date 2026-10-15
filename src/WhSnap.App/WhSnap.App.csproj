@@ -3,7 +3,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <!--
-      �?Windows SDK 投影�?TFM：Windows.Graphics.Capture �?WinRT API �?SDK 投影直接提供�?      无需额外 NuGet 包。SupportedOSPlatformVersion 与安装包�?MinVersion 保持一致（Win11）�?    -->
+      �?Windows SDK 投影�?TFM：Windows.Graphics.Capture �?WinRT API �?SDK 投影直接提供�?      无需额外 NuGet 包。SupportedOSPlatformVersion 与安装包�?MinVersion 保持一致（Win11）�?    -->
     <TargetFramework>net8.0-windows10.0.22000.0</TargetFramework>
     <SupportedOSPlatformVersion>10.0.22000.0</SupportedOSPlatformVersion>
     <UseWPF>true</UseWPF>
@@ -15,19 +15,19 @@
     <AssemblyName>WhSnap</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\whsnap.ico</ApplicationIcon>
-    <Version>0.3.0</Version>
-    <AssemblyVersion>0.3.0.0</AssemblyVersion>
-    <FileVersion>0.3.0.0</FileVersion>
-    <InformationalVersion>0.3.0-preview.1</InformationalVersion>
+    <Version>0.4.0</Version>
+    <AssemblyVersion>0.4.0.0</AssemblyVersion>
+    <FileVersion>0.4.0.0</FileVersion>
+    <InformationalVersion>0.4.0-preview.1</InformationalVersion>
     <Product>WhSnap</Product>
     <Company>wh23423</Company>
     <Copyright>Copyright (c) 2026 wh23423</Copyright>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <DebugType>embedded</DebugType>
-    <!-- Windows.Graphics.Capture �?IGraphicsCaptureItemInterop 需要直接调虚表槽（函数指针�?-->
+    <!-- Windows.Graphics.Capture �?IGraphicsCaptureItemInterop 需要直接调虚表槽（函数指针�?-->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!--
-      WFAC010 建议把高 DPI 配置�?manifest 挪到 ApplicationHighDpiMode（WinForms 专有机制）�?      本程序是 WPF 主体 + WinForms 托盘，PerMonitorV2 必须�?manifest 声明，故有意保留�?    -->
+      WFAC010 建议把高 DPI 配置�?manifest 挪到 ApplicationHighDpiMode（WinForms 专有机制）�?      本程序是 WPF 主体 + WinForms 托盘，PerMonitorV2 必须�?manifest 声明，故有意保留�?    -->
     <NoWarn>$(NoWarn);WFAC010</NoWarn>
   </PropertyGroup>
 
@@ -35,7 +35,7 @@
     <!--
       UseWPF + UseWindowsForms 会让 SDK 注入 WinForms 那套隐式 using
       （System.Drawing / System.Windows.Forms，且不含 System.IO），
-      造成 Rectangle、Clipboard、KeyEventArgs 等类型与 WPF 同名类型歧义�?      这里纠正为常�?BCL 集合；WinForms 类型�?TrayHost 中全限定使用�?    -->
+      造成 Rectangle、Clipboard、KeyEventArgs 等类型与 WPF 同名类型歧义�?      这里纠正为常�?BCL 集合；WinForms 类型�?TrayHost 中全限定使用�?    -->
     <Using Remove="System.Drawing" />
     <Using Remove="System.Windows.Forms" />
     <Using Include="System.IO" />
@@ -47,7 +47,7 @@
 
   <ItemGroup>
     <!--
-      DXGI Desktop Duplication / D3D11 的互操作。手�?COM 接口声明需要精确的 vtable 顺序�?      �?Vortice.Windows（MIT）的元数据生成封装更安全、可维护�?    -->
+      DXGI Desktop Duplication / D3D11 的互操作。手�?COM 接口声明需要精确的 vtable 顺序�?      �?Vortice.Windows（MIT）的元数据生成封装更安全、可维护�?    -->
     <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
     <PackageReference Include="Vortice.DXGI" Version="3.8.3" />
   </ItemGroup>

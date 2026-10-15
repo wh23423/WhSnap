@@ -91,7 +91,7 @@
             <TextBlock Foreground="#FFDCDCDC"
                        FontFamily="Microsoft YaHei UI"
                        FontSize="12"
-                       Text="拖动框选　·　方向键微调　·　Ctrl+方向键改右下边界　·　Shift 加速 10px　·　Enter 确认　·　Ctrl+C 复制　·　Ctrl+S 保存　·　F3 贴图　·　Esc 取消" />
+                       Text="拖动框选　·　方向键微调　·　Ctrl+方向键改右下边界　·　Shift 加速 10px　·　Enter 确认　·　T 标注　·　Ctrl+C 复制　·　Ctrl+S 保存　·　F3 贴图　·　Esc 取消" />
         </Border>
 
     </Grid>

@@ -71,19 +71,41 @@ internal static class MonitorEnumerator
     {
         if (GetCursorPos(out POINT point))
         {
-            IntPtr handle = MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST);
-            var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
-            if (handle != IntPtr.Zero && GetMonitorInfo(handle, ref info))
+            var match = GetMonitorAtPoint(monitors, point.X, point.Y);
+            if (match is not null)
             {
-                var bounds = new PhysicalRect(info.rcMonitor.Left, info.rcMonitor.Top, info.rcMonitor.Width, info.rcMonitor.Height);
-                var match = monitors.FirstOrDefault(m => m.Bounds == bounds);
-                if (match is not null)
-                {
-                    return match;
-                }
+                return match;
             }
         }
 
         return monitors.FirstOrDefault(m => m.IsPrimary) ?? monitors[0];
+    }
+
+    /// <summary>按物理坐标找所在显示器；跨屏时取包含该点的第一台。</summary>
+    public static MonitorInfo? GetMonitorAtPoint(IReadOnlyList<MonitorInfo> monitors, int x, int y)
+    {
+        ArgumentNullException.ThrowIfNull(monitors);
+
+        foreach (var monitor in monitors)
+        {
+            var bounds = monitor.Bounds;
+
+            if (x >= bounds.X && x < bounds.Right && y >= bounds.Y && y < bounds.Bottom)
+            {
+                return monitor;
+            }
+        }
+
+        // 不在任何显示器内（例如刚好在边界上）：用系统 API 兜底
+        IntPtr handle = MonitorFromPoint(new POINT { X = x, Y = y }, MONITOR_DEFAULTTONEAREST);
+        var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+
+        if (handle != IntPtr.Zero && GetMonitorInfo(handle, ref info))
+        {
+            var bounds = new PhysicalRect(info.rcMonitor.Left, info.rcMonitor.Top, info.rcMonitor.Width, info.rcMonitor.Height);
+            return monitors.FirstOrDefault(m => m.Bounds == bounds);
+        }
+
+        return null;
     }
 }

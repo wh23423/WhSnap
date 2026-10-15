@@ -59,6 +59,9 @@ internal sealed class OverlaySession
 
     public event Action<BitmapSource, PhysicalRect, OverlayConfirmAction>? Confirmed;
 
+    /// <summary>用户要求先把选区送去标注（`T`）。会话会就地关闭，由宿主打开标注编辑器。</summary>
+    public event Action<BitmapSource, PhysicalRect>? AnnotateRequested;
+
     public event Action? Cancelled;
 
     public PhysicalRect CurrentSelection => _selection.Current;
@@ -179,9 +182,35 @@ internal sealed class OverlaySession
                 Confirm(OverlayConfirmAction.PinOnly);
                 return true;
 
+            case "overlay.annotate":
+                RequestAnnotate();
+                return true;
+
             default:
                 return false;
         }
+    }
+
+    /// <summary>把当前选区交给标注编辑器：裁剪出图元后关闭遮罩，但**不算确认、也不算取消**。</summary>
+    private void RequestAnnotate()
+    {
+        if (_resolved || !_selection.HasSelection)
+        {
+            return;
+        }
+
+        var rect = _selection.Current;
+        var result = new CroppedBitmap(_frame.Image, new Int32Rect(
+            rect.X - _frame.VirtualBounds.X,
+            rect.Y - _frame.VirtualBounds.Y,
+            rect.Width,
+            rect.Height));
+
+        result.Freeze();
+        _resolved = true;
+
+        AnnotateRequested?.Invoke(result, rect);
+        CloseAll();
     }
 
     public void Cancel()

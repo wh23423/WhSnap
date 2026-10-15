@@ -38,8 +38,8 @@ internal sealed class PinWindow : IDisposable
     private static readonly NativeMethods.WndProcDelegate SharedWndProc = WindowProcedure;
 
     private readonly PinManager _manager;
-    private readonly BitmapSource _source;
     private readonly PinSurface _surface = new();
+    private BitmapSource _source;
 
     private IntPtr _hwnd;
     private GCHandle _selfHandle;
@@ -783,6 +783,29 @@ internal sealed class PinWindow : IDisposable
         {
             _manager.ReportStatus($"复制贴图失败：{error}", warning: true);
         }
+    }
+
+    /// <summary>
+    /// 替换贴图内容（标注回写用）。原始尺寸随之更新，显示缩放保持不变，
+    /// 并且会重新落备份——这样"标注后崩溃"也不会丢标注。
+    /// </summary>
+    internal void ReplaceSource(BitmapSource image)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+
+        var normalized = SaveService.Normalize(image);
+        normalized.Freeze();
+
+        _source = normalized;
+        State = State with
+        {
+            SourceWidth = normalized.PixelWidth,
+            SourceHeight = normalized.PixelHeight,
+        };
+
+        BackupFileName = null; // 内容变了，备份必须重新编码
+        Recompose();
+        RaiseChanged(backup: true);
     }
 
     internal void SaveAs()

@@ -10,7 +10,7 @@ namespace WhSnap.Services;
 /// </summary>
 internal sealed class AppSettings
 {
-    public const int CurrentSchemaVersion = 3;
+    public const int CurrentSchemaVersion = 4;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
 
@@ -111,6 +111,32 @@ internal sealed class AppSettings
     public string TextPinForeground { get; set; } = "#F2F2F2";
 
     public string TextPinBackground { get; set; } = "#1B1B1B";
+
+    // ---- 标注（M4）----
+
+    /// <summary>标注编辑器默认工具：select/rectangle/ellipse/line/arrow/pencil/marker/text/mosaic/blur/eraser/badge/highlight。</summary>
+    public string AnnotationDefaultTool { get; set; } = "rectangle";
+
+    public string AnnotationStrokeColor { get; set; } = "#FF3B30";
+
+    public int AnnotationStrokeWidth { get; set; } = 3;
+
+    /// <summary>矩形/椭圆的填充不透明度，0 = 不填充。</summary>
+    public int AnnotationFillOpacity { get; set; }
+
+    public double AnnotationFontSize { get; set; } = 18;
+
+    public int AnnotationMosaicBlock { get; set; } = PixelEffects.DefaultMosaicBlock;
+
+    public int AnnotationBlurRadius { get; set; } = PixelEffects.DefaultBlurRadius;
+
+    public int AnnotationEraserRadius { get; set; } = 12;
+
+    public int AnnotationBadgeStart { get; set; } = 1;
+
+    /// <summary>调色板（逗号分隔的颜色值）。</summary>
+    public string AnnotationPalette { get; set; } =
+        "#FF3B30,#FF9500,#FFCC00,#34C759,#007AFF,#AF52DE,#FFFFFF,#000000";
 
     [JsonIgnore]
     public static JsonSerializerOptions SerializerOptions { get; } = new()

@@ -1,9 +1,11 @@
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
+using System.Windows.Media.Imaging;
 using WhSnap.Capture;
 using WhSnap.Core;
 using WhSnap.Diagnostics;
+using WhSnap.Overlay;
 using WhSnap.Pin;
 using WhSnap.Services;
 using WhSnap.Tray;
@@ -47,6 +49,12 @@ public partial class App : System.Windows.Application
         if (e.Args.Any(a => a.Equals("--settings-test", StringComparison.OrdinalIgnoreCase)))
         {
             Shutdown(Diagnostics.SettingsTestCommand.Run());
+            return;
+        }
+
+        if (e.Args.Any(a => a.Equals("--annotate-test", StringComparison.OrdinalIgnoreCase)))
+        {
+            Shutdown(Diagnostics.AnnotationTestCommand.Run());
             return;
         }
 
@@ -112,6 +120,8 @@ public partial class App : System.Windows.Application
             KeyBindings = _settings.ResolveHotkeys(),
         };
         _capture.StatusReported += OnStatusReported;
+        _capture.AnnotateRequested += (image, rect) => OpenAnnotation(image, rect, (annotated, copyOnly) =>
+            _capture?.CompleteConfirmed(annotated, rect, copyOnly ? OverlayConfirmAction.CopyOnly : OverlayConfirmAction.Default));
         _capture.PinRequested = image =>
         {
             try
@@ -333,7 +343,7 @@ public partial class App : System.Windows.Application
         var builder = new System.Text.StringBuilder();
         var monitors = _capture is null ? [] : PinMonitorList();
 
-        builder.AppendLine($"版本　　　　WhSnap 0.3.0-preview.1（{Environment.OSVersion.VersionString}）");
+        builder.AppendLine($"版本　　　　WhSnap 0.4.0-preview.1（{Environment.OSVersion.VersionString}）");
         builder.AppendLine($"进程　　　　{(Environment.Is64BitProcess ? "x64" : "x86")}　PID {Environment.ProcessId}");
         builder.AppendLine($"虚拟桌面　　{_pins?.Desktop}　显示器 {monitors.Count} 台");
         builder.AppendLine($"最近后端　　{_settings?.Current.CaptureBackend}");
@@ -437,10 +447,56 @@ public partial class App : System.Windows.Application
 
     private void OnPinAnnotationRequested(PinWindow pin)
     {
-        // M4 之前：贴图内标注还没有引擎，明确告知而不是静默失败（见规划 §7 里程碑）
-        _tray?.ShowBalloon(
-            "贴图内标注",
-            $"已选中贴图 #{pin.ZIndex + 1}。贴图内标注引擎在 M4 提供；当前可先「复制到剪贴板」，或关闭贴图后用截图遮罩继续。");
+        try
+        {
+            OpenAnnotation(pin.Source, pin.Bounds, (annotated, _) =>
+            {
+                pin.ReplaceSource(annotated);
+                _pins?.ReportStatus("贴图内容已更新（标注已写入）");
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Error("打开贴图标注失败", ex);
+            _tray?.ShowBalloon("WhSnap 出错了", ex.Message, warning: true);
+        }
+    }
+
+    /// <summary>
+    /// 打开标注编辑器。区域就是屏幕上的物理矩形，底图按 1:1 显示；
+    /// 工具栏放不下时翻到区域上方（贴图靠近屏幕底边时会用到）。
+    /// </summary>
+    private void OpenAnnotation(BitmapSource image, PhysicalRect region, Action<BitmapSource, bool> onCompleted)
+    {
+        if (_settings is null || image is null || region.IsEmpty)
+        {
+            return;
+        }
+
+        var monitors = MonitorEnumerator.Enumerate();
+        var monitor = MonitorEnumerator.GetMonitorAtPoint(monitors, region.X + (region.Width / 2), region.Y + (region.Height / 2))
+                      ?? monitors.FirstOrDefault();
+
+        double scale = monitor?.ScaleX is > 0 ? monitor.ScaleX : 1.0;
+        bool toolbarAbove = monitor is not null && region.Bottom + 48 > monitor.Bounds.Bottom;
+
+        var window = new Annotation.AnnotationWindow(image, region, scale, _settings.Current, toolbarAbove);
+
+        window.Completed += (annotated, copyOnly) =>
+        {
+            try
+            {
+                onCompleted(annotated, copyOnly);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("标注完成后的后续动作失败", ex);
+                _tray?.ShowBalloon("WhSnap 出错了", ex.Message, warning: true);
+            }
+        };
+
+        window.Cancelled += () => Log.Info("标注已取消。");
+        window.Show();
     }
 
     private void EnsureAutoStartState()

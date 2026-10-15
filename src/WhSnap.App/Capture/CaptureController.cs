@@ -16,6 +16,9 @@ internal sealed class CaptureController(SettingsService settings)
 
     public event Action<string, bool>? StatusReported;
 
+    /// <summary>用户按了「进入标注」：宿主打开标注编辑器，完成后回调 <see cref="CompleteConfirmed"/>。</summary>
+    public event Action<BitmapSource, PhysicalRect>? AnnotateRequested;
+
     /// <summary>贴图回调（由 App 注入 <c>PinManager.CreatePin</c>）。返回 false 表示贴图失败。</summary>
     public Func<BitmapSource, bool>? PinRequested { get; set; }
 
@@ -70,6 +73,12 @@ internal sealed class CaptureController(SettingsService settings)
                 Log.Info("截图已取消。");
             };
 
+            session.AnnotateRequested += (image, rect) =>
+            {
+                _overlay = null;
+                AnnotateRequested?.Invoke(image, rect);
+            };
+
             session.Show();
         }
         catch (Exception ex)
@@ -79,6 +88,13 @@ internal sealed class CaptureController(SettingsService settings)
             StatusReported?.Invoke($"截图失败：{ex.Message}", true);
         }
     }
+
+    /// <summary>
+    /// 走完"确认后动作"（复制 / 保存 / 贴图）。标注编辑器确认后由宿主调用它，
+    /// 这样"标注后确认"和"直接确认"永远是同一套行为。
+    /// </summary>
+    public void CompleteConfirmed(BitmapSource image, PhysicalRect rect, OverlayConfirmAction action = OverlayConfirmAction.Default) =>
+        HandleConfirmed(image, rect, action);
 
     private void HandleConfirmed(BitmapSource image, PhysicalRect rect, OverlayConfirmAction action)
     {
