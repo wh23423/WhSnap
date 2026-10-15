@@ -37,6 +37,8 @@ internal partial class SettingsWindow : Window
     private TextBlock? _updateStatusText;
     private Button? _checkUpdatesButton;
     private Button? _installUpdateButton;
+    private Button? _exportDiagnosticsButton;
+    private TextBlock? _diagnosticsStatusText;
     private UpdateCheckResult? _lastUpdateResult;
 
     public SettingsWindow(SettingsService settings)
@@ -76,6 +78,9 @@ internal partial class SettingsWindow : Window
     /// 返回值是直接显示给用户的状态文字。
     /// </summary>
     public Func<UpdateManifest, Task<string>>? InstallUpdate { get; set; }
+
+    /// <summary>维护页「导出诊断包…」的实现（宿主真正打包），返回值是显示给用户的状态文字。</summary>
+    public Func<Task<string>>? ExportDiagnostics { get; set; }
 
     /// <summary>配置发生变化（宿主可据此刷新托盘文案等）。</summary>
     public event Action? SettingsChanged;
@@ -953,7 +958,21 @@ internal partial class SettingsWindow : Window
         }));
         buttons.Children.Add(MakeButton("打开日志目录", () => OpenPath(Log.LogDirectory)));
 
+        _exportDiagnosticsButton = new Button { Content = "导出诊断包…", Margin = new Thickness(0, 0, 6, 6) };
+        _exportDiagnosticsButton.Click += async (_, _) => await RunExportDiagnosticsAsync();
+        buttons.Children.Add(_exportDiagnosticsButton);
+
         panel.Children.Add(buttons);
+
+        _diagnosticsStatusText = new TextBlock
+        {
+            Text = "诊断包：日志 + 配置 + 显示器拓扑 + 热键表 + 崩溃证据（用户目录已脱敏，不含剪贴板内容与任何凭据）。",
+            Foreground = new SolidColorBrush(Color.FromRgb(0x9A, 0x9A, 0x9A)),
+            FontSize = 11,
+            Margin = new Thickness(0, 4, 0, 0),
+        };
+
+        panel.Children.Add(_diagnosticsStatusText);
 
         panel.Children.Add(new TextBlock
         {
@@ -1067,6 +1086,55 @@ internal partial class SettingsWindow : Window
         if (_updateStatusText is not null)
         {
             _updateStatusText.Text = text;
+        }
+
+        return text;
+    }
+
+    /// <summary>维护页是否有「导出诊断包…」入口。</summary>
+    internal bool HasDiagnosticsEntry => _exportDiagnosticsButton is not null;
+
+    /// <summary>维护页的诊断包状态文字（自检断言结论真的写进了界面）。</summary>
+    internal string DiagnosticsStatusText => _diagnosticsStatusText?.Text ?? string.Empty;
+
+    /// <summary>导出诊断包并把结果写进维护页（自检与按钮走同一条路径）。</summary>
+    internal async Task<string> RunExportDiagnosticsAsync()
+    {
+        if (ExportDiagnostics is null)
+        {
+            return SetDiagnosticsStatus("诊断包导出不可用。");
+        }
+
+        SetDiagnosticsStatus("正在打包诊断包…");
+
+        if (_exportDiagnosticsButton is not null)
+        {
+            _exportDiagnosticsButton.IsEnabled = false;
+        }
+
+        try
+        {
+            return SetDiagnosticsStatus(await ExportDiagnostics());
+        }
+        catch (Exception ex)
+        {
+            Log.Error("导出诊断包失败", ex);
+            return SetDiagnosticsStatus($"导出诊断包失败：{ex.GetType().Name}: {ex.Message}");
+        }
+        finally
+        {
+            if (_exportDiagnosticsButton is not null)
+            {
+                _exportDiagnosticsButton.IsEnabled = true;
+            }
+        }
+    }
+
+    private string SetDiagnosticsStatus(string text)
+    {
+        if (_diagnosticsStatusText is not null)
+        {
+            _diagnosticsStatusText.Text = text;
         }
 
         return text;

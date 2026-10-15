@@ -14,6 +14,7 @@ internal sealed class TrayHost : IDisposable
     private readonly System.Windows.Forms.ToolStripMenuItem _panelItem;
     private readonly System.Windows.Forms.ToolStripMenuItem _recentColorsItem;
     private readonly System.Windows.Forms.ToolStripMenuItem _checkUpdatesItem;
+    private readonly System.Windows.Forms.ToolStripMenuItem _exportDiagnosticsItem;
     private bool _suppressAutoStartEvent;
 
     public TrayHost(string hotkeyText, bool autoStartEnabled)
@@ -52,6 +53,9 @@ internal sealed class TrayHost : IDisposable
 
         _checkUpdatesItem = new System.Windows.Forms.ToolStripMenuItem("检查更新…");
         _checkUpdatesItem.Click += (_, _) => CheckUpdatesRequested?.Invoke();
+
+        _exportDiagnosticsItem = new System.Windows.Forms.ToolStripMenuItem("导出诊断包…");
+        _exportDiagnosticsItem.Click += (_, _) => ExportDiagnosticsRequested?.Invoke();
 
         var picker = new System.Windows.Forms.ToolStripMenuItem("取色器（取色并复制）");
         picker.Click += (_, _) => PickerRequested?.Invoke();
@@ -97,6 +101,7 @@ internal sealed class TrayHost : IDisposable
         menu.Items.Add(_autoStartItem);
         menu.Items.Add(settings);
         menu.Items.Add(_checkUpdatesItem);
+        menu.Items.Add(_exportDiagnosticsItem);
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add(about);
         menu.Items.Add(exit);
@@ -140,6 +145,9 @@ internal sealed class TrayHost : IDisposable
     /// <summary>托盘「检查更新…」：手动检查一次（含下载与安装确认）。</summary>
     public event Action? CheckUpdatesRequested;
 
+    /// <summary>托盘「导出诊断包…」：一键打包日志/配置/拓扑/崩溃证据。</summary>
+    public event Action? ExportDiagnosticsRequested;
+
     /// <summary>托盘「取色器」：开始一次只取色的截图会话。</summary>
     public event Action? PickerRequested;
 
@@ -156,6 +164,12 @@ internal sealed class TrayHost : IDisposable
 
     /// <summary>自检用：模拟点击「检查更新…」，验证菜单项确实把事件抛给宿主。</summary>
     internal void SimulateCheckUpdatesClick() => _checkUpdatesItem.PerformClick();
+
+    /// <summary>自检用：「导出诊断包…」菜单项的当前文案。</summary>
+    internal string ExportDiagnosticsItemText => _exportDiagnosticsItem.Text ?? string.Empty;
+
+    /// <summary>自检用：模拟点击「导出诊断包…」。</summary>
+    internal void SimulateExportDiagnosticsClick() => _exportDiagnosticsItem.PerformClick();
 
     /// <summary>贴图数量与剪贴板监听状态直接写在菜单上，避免"不知道现在有几张贴图"。</summary>
     public void SyncPinState(int pinCount, bool clipboardWatcherRunning)

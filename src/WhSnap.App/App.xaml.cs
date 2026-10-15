@@ -26,6 +26,7 @@ public partial class App : System.Windows.Application
     private ClipboardWatcher? _clipboard;
     private UpdateCoordinator? _updater;
     private bool _updateCheckRunning;
+    private bool _diagnosticsBusy;
     private ColorHistory _colorHistory = new();
     private DispatcherTimer? _settingsSaveTimer;
 
@@ -77,10 +78,26 @@ public partial class App : System.Windows.Application
             return;
         }
 
+        if (e.Args.Any(a => a.Equals("--crash-test", StringComparison.OrdinalIgnoreCase)))
+        {
+            // 默认只写文本报告；加 --with-dump 才真写一份 minidump（写完校验并删除）
+            bool withDump = e.Args.Any(a => a.Equals("--with-dump", StringComparison.OrdinalIgnoreCase));
+            Shutdown(Diagnostics.CrashTestCommand.Run(withDump));
+            return;
+        }
+
         if (TryGetArgument(e.Args, "--capture-to", out string? capturePath) && !string.IsNullOrWhiteSpace(capturePath))
         {
             TryGetArgument(e.Args, "--backend", out string? backendName);
             Shutdown(Diagnostics.CaptureCommand.Run(capturePath, backendName));
+            return;
+        }
+
+        if (e.Args.Any(a => a.Equals("--diagnostics-pack", StringComparison.OrdinalIgnoreCase)))
+        {
+            // 程序起不来（或要让用户"跑一句命令把 zip 发我"）时也能拿到证据
+            TryGetArgument(e.Args, "--out", out string? packDirectory);
+            Shutdown(Diagnostics.DiagnosticsPackCommand.Run(packDirectory));
             return;
         }
 
@@ -96,12 +113,21 @@ public partial class App : System.Windows.Application
         DispatcherUnhandledException += (_, args) =>
         {
             Log.Error("未处理的界面异常", args.Exception);
-            _tray?.ShowBalloon("WhSnap 遇到问题", args.Exception.Message, warning: true);
+            CrashHandler.Write("界面异常", args.Exception);
+            _tray?.ShowBalloon(
+                "WhSnap 遇到问题",
+                $"{args.Exception.Message}\n\n已在「托盘 → 导出诊断包…」里附带崩溃证据。",
+                warning: true);
             args.Handled = true;
         };
 
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+        {
             Log.Error("未处理的域异常", args.ExceptionObject as Exception);
+
+            // 这个处理器之后进程就要结束了：dump 必须在这里同步写完
+            CrashHandler.Write("域异常", args.ExceptionObject as Exception);
+        };
 
         _settings = new SettingsService();
         _settings.Load();
@@ -122,6 +148,7 @@ public partial class App : System.Windows.Application
         _tray.CloseAllPinsRequested += () => _pins?.CloseAll();
         _tray.SettingsRequested += ShowSettings;
         _tray.CheckUpdatesRequested += OnCheckUpdatesRequested;
+        _tray.ExportDiagnosticsRequested += OnExportDiagnosticsRequested;
         _tray.PickerRequested += () => _capture?.Start(colorPickMode: true);
         _tray.RecentColorSelected += CopyColorFromHistory;
         _tray.ClearColorHistoryRequested += () =>
@@ -214,6 +241,40 @@ public partial class App : System.Windows.Application
 
         // 更新检查放在最后：先让托盘/热键/贴图就绪，再异步拉清单（不阻塞界面）
         StartStartupUpdateCheck();
+
+        // 上次崩溃只提示一次（读完即删标记），并指向诊断包入口
+        NotifyPreviousCrashIfAny();
+
+        if (e.Args.Any(a => a.Equals("--crash-now", StringComparison.OrdinalIgnoreCase)))
+        {
+            // 验收专用：在一个真实界面事件处理器里抛未处理异常，验证
+            // "崩溃 → 文本报告 + dump 落盘 → 下次启动提示" 整条链路真的工作。正常使用不会走到这里。
+            Log.Warn("--crash-now：即将抛出验收用的自检异常。");
+            var probe = new System.Windows.Window
+            {
+                Width = 320,
+                Height = 140,
+                Title = "WhSnap 崩溃自检",
+                Content = "这个窗口的 Loaded 处理器会抛异常，用来验证崩溃证据链。",
+            };
+
+            probe.Loaded += (_, _) => throw new InvalidOperationException("--crash-now：验收用的自检崩溃");
+            probe.Show();
+        }
+    }
+
+    /// <summary>上次运行崩过就弹一次气泡：给出摘要 + 证据路径 + 怎么交给我。</summary>
+    private void NotifyPreviousCrashIfAny()
+    {
+        string? notice = CrashHandler.ReadPendingNoticeOnce();
+
+        if (string.IsNullOrWhiteSpace(notice))
+        {
+            return;
+        }
+
+        Log.Warn("检测到上次运行崩溃，已提示用户导出诊断包。");
+        _tray?.ShowBalloon("上次运行崩溃过", notice + "\n建议：托盘「导出诊断包…」把证据打包给我。", warning: true);
     }
 
     protected override void OnExit(System.Windows.ExitEventArgs e)
@@ -345,6 +406,7 @@ public partial class App : System.Windows.Application
             DiagnosticsProvider = BuildDiagnostics,
             Updater = _updater,
             InstallUpdate = InstallUpdateFromSettingsAsync,
+            ExportDiagnostics = ExportDiagnosticsAsync,
             ClearPinBackups = () =>
             {
                 _pins?.BackupStore.Clear();
@@ -543,6 +605,82 @@ public partial class App : System.Windows.Application
         UpdateService.LaunchInstaller(installerPath);
         Log.Info("更新安装已启动，WhSnap 即将退出以便替换程序文件。");
         Shutdown(0);
+    }
+
+    // ---------------------------------------------------------------- 诊断包（M6 第 5 项）
+
+    /// <summary>托盘「导出诊断包…」：打包在工作线程完成，界面线程只等结果。</summary>
+    private async void OnExportDiagnosticsRequested()
+    {
+        if (_diagnosticsBusy)
+        {
+            _tray?.ShowBalloon("导出诊断包", "正在打包，请稍候…");
+            return;
+        }
+
+        _diagnosticsBusy = true;
+
+        try
+        {
+            string description = await ExportDiagnosticsAsync();
+            _tray?.ShowBalloon(
+                "诊断包已导出",
+                $"{description}\n\n可直接把 zip 发给开发者；包里不含剪贴板内容与任何凭据。");
+        }
+        catch (Exception ex)
+        {
+            Log.Error("导出诊断包失败", ex);
+            _tray?.ShowBalloon("导出诊断包失败", $"{ex.GetType().Name}: {ex.Message}", warning: true);
+        }
+        finally
+        {
+            _diagnosticsBusy = false;
+        }
+    }
+
+    /// <summary>
+    /// 真正打包（托盘与设置维护页共用同一条路径）。IO 整体丢到线程池，界面线程只显示返回值。
+    /// </summary>
+    private Task<string> ExportDiagnosticsAsync()
+    {
+        var context = BuildDiagnosticsPackContext();
+        return Task.Run(() => DiagnosticsPack.Create(context).Describe());
+    }
+
+    private DiagnosticsPackContext BuildDiagnosticsPackContext() =>
+        DiagnosticsPack.Collect(
+            version: UpdateService.GetCurrentVersion(),
+            report: BuildDiagnostics(),
+            monitors: BuildMonitorText(),
+            hotkeys: BuildHotkeyText(),
+            settingsJson: _settings?.ExportJson() ?? "{}",
+            outputDirectory: DiagnosticsPack.DefaultDirectory);
+
+    private string BuildMonitorText()
+    {
+        var monitors = PinMonitorList();
+        return monitors.Count == 0
+            ? "（未枚举到显示器）"
+            : string.Join(Environment.NewLine, monitors.Select(m => m.ToString()));
+    }
+
+    private string BuildHotkeyText()
+    {
+        var builder = new System.Text.StringBuilder();
+
+        foreach (var binding in _settings?.ResolveHotkeys() ?? [])
+        {
+            string status = !binding.Enabled
+                ? "停用"
+                : !binding.IsBound
+                    ? "未绑定"
+                    : binding.IsActive ? "生效" : "键位非法";
+
+            builder.AppendLine(
+                $"{binding.Definition.Scope,-7} {binding.Definition.Id,-24} {binding.Keys ?? "(未绑定)",-16} {binding.Definition.DisplayName}　[{status}]");
+        }
+
+        return builder.ToString();
     }
 
     private string BuildDiagnostics()

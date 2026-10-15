@@ -313,6 +313,44 @@ internal static class SettingsTestCommand
                 }
             });
 
+            Check("维护页有「导出诊断包…」入口，点击会把包交给宿主并写回状态", () =>
+            {
+                if (!window!.HasDiagnosticsEntry)
+                {
+                    throw new InvalidOperationException("维护页缺少「导出诊断包…」入口。");
+                }
+
+                string? requested = null;
+                window.ExportDiagnostics = () =>
+                {
+                    requested = "called";
+                    return Task.FromResult("（自检）诊断包已导出：C:\\temp\\WhSnap-diagnostics-9.9.9.zip");
+                };
+
+                string status = AwaitWithPump(window.RunExportDiagnosticsAsync());
+
+                if (requested is null || !status.Contains("已导出", StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException($"导出入口没有把请求交给宿主：{status}");
+                }
+
+                if (!window.DiagnosticsStatusText.Contains("已导出", StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException($"结论没有写进界面：{window.DiagnosticsStatusText}");
+                }
+
+                // 宿主实现抛异常时也必须变成可读文字，而不是让界面炸掉
+                window.ExportDiagnostics = () => throw new InvalidOperationException("自检构造的导出失败");
+                string failed = AwaitWithPump(window.RunExportDiagnosticsAsync());
+
+                if (!failed.Contains("导出诊断包失败", StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException($"宿主失败时没有给出可读提示：{failed}");
+                }
+
+                log.AppendLine($"       {status}");
+            });
+
             Check("清单缺失 / 损坏 / 地址非法都给出失败原因，不抛异常", () =>
             {
                 string dir = Path.Combine(Path.GetTempPath(), "whsnap-settings-update-bad");

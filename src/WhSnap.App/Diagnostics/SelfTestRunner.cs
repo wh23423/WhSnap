@@ -374,25 +374,180 @@ internal static class SelfTestRunner
                    + $"自动下载 {updater.AutoDownloadEnabled}；清单 {kind}（入口：启动检查 / 托盘「检查更新…」/ 设置维护页）";
         });
 
-        Check("托盘「检查更新…」入口可达（点击真的会通知宿主）", () =>
+        Check("托盘入口可达（「检查更新…」与「导出诊断包…」点击真的会通知宿主）", () =>
         {
             using var tray = new WhSnap.Tray.TrayHost("F1", autoStartEnabled: false);
-            int fired = 0;
-            tray.CheckUpdatesRequested += () => fired++;
+            int updates = 0;
+            int diagnostics = 0;
+            tray.CheckUpdatesRequested += () => updates++;
+            tray.ExportDiagnosticsRequested += () => diagnostics++;
 
-            string text = tray.CheckUpdatesItemText;
-            if (string.IsNullOrWhiteSpace(text) || !text.Contains("更新", StringComparison.Ordinal))
+            string updateText = tray.CheckUpdatesItemText;
+            string diagnosticsText = tray.ExportDiagnosticsItemText;
+
+            if (string.IsNullOrWhiteSpace(updateText) || !updateText.Contains("更新", StringComparison.Ordinal))
             {
-                throw new InvalidOperationException($"托盘菜单里找不到「检查更新…」入口，实际文案：{text}");
+                throw new InvalidOperationException($"托盘菜单里找不到「检查更新…」入口，实际文案：{updateText}");
+            }
+
+            if (string.IsNullOrWhiteSpace(diagnosticsText) || !diagnosticsText.Contains("诊断", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException($"托盘菜单里找不到「导出诊断包…」入口，实际文案：{diagnosticsText}");
             }
 
             tray.SimulateCheckUpdatesClick();
-            if (fired != 1)
+            tray.SimulateExportDiagnosticsClick();
+
+            if (updates != 1 || diagnostics != 1)
             {
-                throw new InvalidOperationException($"点击「检查更新…」后宿主收到 {fired} 次请求，期望 1 次。");
+                throw new InvalidOperationException($"点击后宿主收到 更新={updates} / 诊断={diagnostics}，各期望 1 次。");
             }
 
-            return $"菜单项「{text}」→ 宿主收到 1 次检查请求";
+            return $"「{updateText}」「{diagnosticsText}」→ 宿主各收到 1 次请求";
+        });
+
+        Check("崩溃证据：dumps 目录可写 + MiniDumpWriteDump 可解析（不真写 dump）", () =>
+        {
+            string root = Path.Combine(Path.GetTempPath(), "whsnap-selftest-dumps-" + Guid.NewGuid().ToString("N")[..8]);
+
+            try
+            {
+                Directory.CreateDirectory(root);
+                var crash = CrashHandler.Write("自检", new InvalidOperationException("自检构造的异常"), writeDump: false, directory: root);
+
+                if (crash is null || !File.Exists(crash.TextPath))
+                {
+                    throw new InvalidOperationException("崩溃文本报告没有落盘。");
+                }
+
+                string text = File.ReadAllText(crash.TextPath);
+                string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+                if (!string.IsNullOrWhiteSpace(profile) && text.Contains(profile, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException("崩溃报告里的用户目录没有脱敏。");
+                }
+
+                if (!NativeMethods.IsDumpApiAvailable())
+                {
+                    throw new InvalidOperationException("dbghelp!MiniDumpWriteDump 在这台机器上不可用。");
+                }
+
+                return $"{Path.GetFileName(crash.TextPath)}（{new FileInfo(crash.TextPath).Length} 字节，已脱敏）；dump API 可解析（未真写 dump）";
+            }
+            finally
+            {
+                try
+                {
+                    if (Directory.Exists(root))
+                    {
+                        Directory.Delete(root, recursive: true);
+                    }
+                }
+                catch
+                {
+                    // 临时目录清理失败可忽略
+                }
+            }
+        });
+
+        Check("诊断包导出（zip 端到端：条目齐全 + 回读 + 已脱敏）", () =>
+        {
+            string root = Path.Combine(Path.GetTempPath(), "whsnap-selftest-diagnostics-" + Guid.NewGuid().ToString("N")[..8]);
+            string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+            try
+            {
+                string logs = Path.Combine(root, "logs");
+                string dumps = Path.Combine(root, "dumps");
+                Directory.CreateDirectory(logs);
+                Directory.CreateDirectory(dumps);
+
+                File.WriteAllText(
+                    Path.Combine(logs, "whsnap-20261015.log"),
+                    $"00:00:01 [INFO] 保存到 {profile}\\Pictures{Environment.NewLine}",
+                    new UTF8Encoding(false));
+
+                File.WriteAllText(
+                    Path.Combine(dumps, "crash-20261015-000000-000.txt"),
+                    $"崩溃报告：用户目录 {profile}",
+                    new UTF8Encoding(false));
+
+                var context = new DiagnosticsPackContext
+                {
+                    OutputDirectory = Path.Combine(root, "out"),
+                    Version = UpdateService.GetCurrentVersion(),
+                    Report = $"版本 WhSnap {UpdateService.GetCurrentVersion()}；用户目录 {profile}",
+                    Monitors = "1 台显示器 1920x1080 @100%（主屏）",
+                    Hotkeys = "Global  capture.region  F1  截图  [生效]",
+                    SettingsJson = "{\"SaveDirectory\": \"" + profile.Replace("\\", "\\\\") + "\\\\Pictures\"}",
+                    LogDirectory = logs,
+                    CrashReports = CrashHandler.ListReports(dumps),
+                    CrashDumps = CrashHandler.ListDumps(dumps),
+                };
+
+                var result = DiagnosticsPack.Create(context);
+                var names = DiagnosticsPack.ReadEntryNames(result.Path);
+
+                foreach (string expected in new[] { "README.txt", "report.txt", "monitors.txt", "hotkeys.txt", "settings.json", "performance.txt", "crashes.txt" })
+                {
+                    if (!names.Contains(expected, StringComparer.Ordinal))
+                    {
+                        throw new InvalidOperationException($"诊断包缺少 {expected}；实际条目：{string.Join("、", names)}");
+                    }
+                }
+
+                if (!names.Any(name => name.StartsWith("logs/", StringComparison.Ordinal)))
+                {
+                    throw new InvalidOperationException($"诊断包没有带日志：{string.Join("、", names)}");
+                }
+
+                if (!names.Any(name => name.StartsWith("crashes/", StringComparison.Ordinal)))
+                {
+                    throw new InvalidOperationException($"诊断包没有带崩溃报告：{string.Join("、", names)}");
+                }
+
+                // 回读 + 逐个条目确认脱敏（zip 里不该出现明文用户目录）
+                foreach (string name in names)
+                {
+                    string content = DiagnosticsPack.ReadEntryText(result.Path, name) ?? string.Empty;
+
+                    if (!string.IsNullOrWhiteSpace(profile) && content.Contains(profile, StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new InvalidOperationException($"条目 {name} 里仍有明文用户目录。");
+                    }
+                }
+
+                string settingsEntry = DiagnosticsPack.ReadEntryText(result.Path, "settings.json") ?? string.Empty;
+
+                if (!settingsEntry.Contains("%USERPROFILE%", StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException("settings.json 没有脱敏标记。");
+                }
+
+                string readme = DiagnosticsPack.ReadEntryText(result.Path, "README.txt") ?? string.Empty;
+
+                if (!readme.Contains("不含剪贴板内容", StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException("README 里没有写明隐私边界。");
+                }
+
+                return $"{result.Describe()}；条目 {string.Join("、", names)}；用户目录已脱敏";
+            }
+            finally
+            {
+                try
+                {
+                    if (Directory.Exists(root))
+                    {
+                        Directory.Delete(root, recursive: true);
+                    }
+                }
+                catch
+                {
+                    // 临时目录清理失败可忽略
+                }
+            }
         });
 
         Check("选区编辑（绝对坐标 / 微调 / 手柄 / 放大镜）", () =>
