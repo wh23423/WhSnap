@@ -184,6 +184,57 @@ internal static class SelfTestRunner
             return $"已启用={enabled}，注册表路径一致={consistent}（自启项由安装包默认写入，程序仅在缺失时补写）";
         });
 
+        Check("选区编辑（绝对坐标 / 微调 / 手柄 / 放大镜）", () =>
+        {
+            var monitors = MonitorEnumerator.Enumerate();
+            var bounds = VirtualDesktop.BoundsOf(monitors);
+            var model = new SelectionModel(bounds);
+
+            // 从虚拟桌面左上角拖到右下角，等价于一次跨屏框选
+            model.Begin(new PhysicalPoint(bounds.X + 8, bounds.Y + 8));
+            model.Update(new PhysicalPoint(bounds.Right - 8, bounds.Bottom - 8));
+            model.End();
+
+            if (model.Current.Width != bounds.Width - 16 || model.Current.Height != bounds.Height - 16)
+            {
+                throw new InvalidOperationException($"跨屏框选结果异常：{model.Current}（虚拟桌面 {bounds}）");
+            }
+
+            // 换成有余量的选区，才能验证微调与手柄（铺满屏幕时平移会被正确地限位）
+            model.SetSelection(new PhysicalRect(bounds.X + 200, bounds.Y + 200, 400, 300));
+
+            int beforeX = model.Current.X;
+            model.Nudge(NudgeDirection.Right, 10, resize: false);
+            if (model.Current.X != beforeX + 10)
+            {
+                throw new InvalidOperationException($"方向键平移未生效：{beforeX} → {model.Current.X}");
+            }
+
+            var handle = SelectionModel.HitTest(model.Current, new PhysicalPoint(model.Current.X, model.Current.Y), 6);
+            if (handle != SelectionHandle.TopLeft)
+            {
+                throw new InvalidOperationException($"手柄命中错误：{handle}");
+            }
+
+            model.BeginResize(handle, new PhysicalPoint(model.Current.X, model.Current.Y));
+            int widthBefore = model.Current.Width;
+            model.Update(new PhysicalPoint(model.Current.X + 30, model.Current.Y + 20));
+            model.End();
+
+            if (model.Current.Width != widthBefore - 30)
+            {
+                throw new InvalidOperationException($"手柄缩放未生效：{widthBefore} → {model.Current.Width}");
+            }
+
+            var magnifier = Magnifier.Compute(new PhysicalPoint(monitors[0].Bounds.X + 100, monitors[0].Bounds.Y + 100), monitors[0].Bounds);
+            if (magnifier.Source.Width != Magnifier.DefaultSampleSize || magnifier.Zoom < 1)
+            {
+                throw new InvalidOperationException("放大镜取样几何异常。");
+            }
+
+            return $"虚拟桌面 {bounds}，{monitors.Count} 台显示器；框选 {model.Current}；平移/手柄/放大镜均正常";
+        });
+
         // 逐后端单独验证：某个后端"这台机器不支持"记为 SKIP，真正出错才算 FAIL
         foreach (var backend in new[] { CaptureBackend.Dxgi, CaptureBackend.Wgc, CaptureBackend.Gdi })
         {

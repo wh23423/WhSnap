@@ -15,9 +15,9 @@
         UseLayoutRounding="True"
         SnapsToDevicePixels="True">
 
-    <Grid x:Name="Root" ClipToBounds="True">
+    <Grid x:Name="Root" ClipToBounds="True" Background="Transparent">
 
-        <!-- 冻结的屏幕内容：按物理像素 1:1 呈现，绝不做插值缩放 -->
+        <!-- 本显示器那一块冻结画面：按物理像素 1:1 呈现 -->
         <Image x:Name="FrozenImage"
                Stretch="None"
                HorizontalAlignment="Left"
@@ -25,19 +25,53 @@
                RenderOptions.BitmapScalingMode="NearestNeighbor"
                RenderOptions.EdgeMode="Aliased" />
 
-        <!-- 暗化层与选区边框由代码动态加入 -->
+        <!-- 暗化层、选区边框、8 向手柄（代码构建） -->
         <Canvas x:Name="Layer" ClipToBounds="True" />
 
-        <!-- 尺寸/坐标提示：必须是 Canvas 的直接子元素，Canvas.SetLeft 才生效 -->
+        <!-- HUD：放大镜 + 尺寸 + 色值 -->
         <Canvas x:Name="HudLayer" ClipToBounds="True" IsHitTestVisible="False">
+
+            <Border x:Name="MagnifierPanel"
+                    Visibility="Collapsed"
+                    Background="#FF0E0E0E"
+                    BorderBrush="#803B9CFF"
+                    BorderThickness="1"
+                    CornerRadius="2">
+                <Grid x:Name="MagnifierRoot">
+                    <Image x:Name="MagnifierImage"
+                           Stretch="Fill"
+                           RenderOptions.BitmapScalingMode="NearestNeighbor"
+                           RenderOptions.EdgeMode="Aliased" />
+                    <Canvas x:Name="MagnifierGrid" ClipToBounds="True" />
+                    <Rectangle x:Name="MagnifierCenter"
+                               Stroke="#FFFFD34D"
+                               StrokeThickness="1"
+                               Fill="#26FFD34D"
+                               IsHitTestVisible="False" />
+                </Grid>
+            </Border>
+
             <Border x:Name="HudBorder"
+                    Visibility="Collapsed"
                     Background="#E61B1B1B"
                     BorderBrush="#553B9CFF"
                     BorderThickness="1"
                     CornerRadius="3"
-                    Padding="7,3"
-                    Visibility="Collapsed">
+                    Padding="7,3">
                 <TextBlock x:Name="HudText"
+                           Foreground="#FFF2F2F2"
+                           FontFamily="Consolas, Microsoft YaHei UI"
+                           FontSize="12" />
+            </Border>
+
+            <Border x:Name="ColorBorder"
+                    Visibility="Collapsed"
+                    Background="#E61B1B1B"
+                    BorderBrush="#553B9CFF"
+                    BorderThickness="1"
+                    CornerRadius="3"
+                    Padding="7,3">
+                <TextBlock x:Name="ColorText"
                            Foreground="#FFF2F2F2"
                            FontFamily="Consolas, Microsoft YaHei UI"
                            FontSize="12" />
@@ -57,7 +91,7 @@
             <TextBlock Foreground="#FFDCDCDC"
                        FontFamily="Microsoft YaHei UI"
                        FontSize="12"
-                       Text="拖动选择区域　·　Enter 复制并保存　·　Esc 或右键取消" />
+                       Text="拖动框选　·　方向键微调　·　Ctrl+方向键改右下边界　·　Shift 加速 10px　·　Enter 确认　·　Esc 取消" />
         </Border>
 
     </Grid>

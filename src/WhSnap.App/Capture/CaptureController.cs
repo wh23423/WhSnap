@@ -12,7 +12,7 @@ namespace WhSnap.Capture;
 internal sealed class CaptureController(SettingsService settings)
 {
     private readonly SettingsService _settings = settings;
-    private OverlayWindow? _overlay;
+    private OverlaySession? _overlay;
 
     public event Action<string, bool>? StatusReported;
 
@@ -49,25 +49,22 @@ internal sealed class CaptureController(SettingsService settings)
                 Log.Warn("检测到受保护内容被系统屏蔽，截图可能包含黑块。");
             }
 
-            var overlay = new OverlayWindow(frame, monitor, _settings.Current);
-            _overlay = overlay;
+            var session = new OverlaySession(frame, monitor, _settings.Current);
+            _overlay = session;
 
-            overlay.SelectionConfirmed += (image, rect) =>
+            session.Confirmed += (image, rect) =>
             {
                 _overlay = null;
                 HandleConfirmed(image, rect);
             };
 
-            overlay.Cancelled += () =>
+            session.Cancelled += () =>
             {
                 _overlay = null;
                 Log.Info("截图已取消。");
             };
 
-            overlay.Closed += (_, _) => _overlay = null;
-
-            overlay.Show();
-            overlay.Activate();
+            session.Show();
         }
         catch (Exception ex)
         {

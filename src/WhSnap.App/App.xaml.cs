@@ -27,6 +27,12 @@ public partial class App : System.Windows.Application
             return;
         }
 
+        if (e.Args.Any(a => a.Equals("--overlay-test", StringComparison.OrdinalIgnoreCase)))
+        {
+            Shutdown(Diagnostics.OverlayTestCommand.Run());
+            return;
+        }
+
         if (TryGetArgument(e.Args, "--capture-to", out string? capturePath) && !string.IsNullOrWhiteSpace(capturePath))
         {
             TryGetArgument(e.Args, "--backend", out string? backendName);
