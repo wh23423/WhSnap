@@ -88,10 +88,12 @@
             <Setter Property="TextElement.Foreground" Value="{StaticResource Focal.OnDarkFaintBrush}"/>
         </Style>
 
-        <!-- 快捷键字母：等宽 + tabular-nums（Focal.DataText），字号落到 caption 以适配 92px rail -->
+        <!-- 快捷键字母：等宽 + tabular-nums（Focal.DataText），字号落到 caption 以适配 92px rail。
+             用 OnDarkMuted 而不是 OnDarkFaint：字母是"这个工具怎么按"的唯一线索，必须读得出来
+             （运行时由 SyncUi 显式给色，这里保持一致以免首次渲染闪一下更暗的值）。 -->
         <Style x:Key="An.RailKey" TargetType="TextBlock" BasedOn="{StaticResource Focal.DataText}">
             <Setter Property="FontSize" Value="{StaticResource Focal.CaptionSize}"/>
-            <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkFaintBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource Focal.OnDarkMutedBrush}"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
             <Setter Property="Margin" Value="4,0,0,0"/>
         </Style>
@@ -205,7 +207,7 @@
                 </Border>
 
                 <Button Grid.Column="4" Style="{StaticResource Focal.WindowButtonClose}"
-                        Click="OnCancelClick" ToolTip="取消（Esc）">
+                        Click="OnCancelClick" ToolTip="取消标注">
                     <theme:FocalIcon Icon="x" Size="{StaticResource Focal.IconSm}"/>
                 </Button>
             </Grid>
@@ -368,11 +370,11 @@
                     </Button>
 
                     <Button x:Name="CancelButton" Style="{StaticResource Focal.Button.Secondary}"
-                            Click="OnCancelClick" ToolTip="取消标注（{annotation.cancel}）" AutomationProperties.Name="取消">
+                            Click="OnCancelClick" ToolTip="取消标注（{annotation.cancel}）" AutomationProperties.Name="取消标注">
                         <StackPanel Orientation="Horizontal">
                             <theme:FocalIcon Icon="x" Size="{StaticResource Focal.IconSm}"
                                              TextElement.Foreground="{StaticResource Focal.OnDarkMutedBrush}"/>
-                            <TextBlock Style="{StaticResource An.ControlLabel}" Text="取消" Margin="6,0,0,0"/>
+                            <TextBlock x:Name="CancelLabel" Style="{StaticResource An.ControlLabel}" Text="取消标注" Margin="6,0,0,0"/>
                             <Border Style="{StaticResource Focal.Kbd}" Margin="6,0,0,0">
                                 <TextBlock x:Name="CancelKeycap" Style="{StaticResource Focal.KbdText}" Text="Esc"/>
                             </Border>
@@ -380,12 +382,12 @@
                     </Button>
 
                     <Button x:Name="ConfirmButton" Style="{StaticResource Focal.Button.Primary}"
-                            Click="OnConfirmClick" ToolTip="确认标注（{annotation.confirm}）" AutomationProperties.Name="完成"
+                            Click="OnConfirmClick" ToolTip="确认标注（{annotation.confirm}）" AutomationProperties.Name="确认标注"
                             Margin="8,0,0,0">
                         <StackPanel Orientation="Horizontal">
                             <theme:FocalIcon Icon="check" Size="{StaticResource Focal.IconSm}"
                                              TextElement.Foreground="{StaticResource Focal.AccentInkBrush}"/>
-                            <TextBlock Style="{StaticResource An.ControlLabel}" Text="完成" Margin="6,0,0,0"/>
+                            <TextBlock x:Name="ConfirmLabel" Style="{StaticResource An.ControlLabel}" Text="确认标注" Margin="6,0,0,0"/>
                             <Border Style="{StaticResource An.KbdPrimary}" Margin="6,0,0,0">
                                 <TextBlock x:Name="ConfirmKeycap" Style="{StaticResource An.KbdTextPrimary}" Text="Enter"/>
                             </Border>

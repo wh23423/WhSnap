@@ -34,10 +34,12 @@ internal sealed class TrayHost : IDisposable
         };
 
         // ── 截图 ────────────────────────────────────────────────────────────
-        _captureItem = new FocalMenuItem("截图", hotkeyText);
+        // 名字一律取 HotkeyCatalog 的动作名：同一个动作在托盘 / 设置 / 提示里必须同一个名字
+        // （评审 P1-7：托盘叫"截图"、设置叫"截图（区域）"，用户无法把它们对应起来）。
+        _captureItem = new FocalMenuItem(HotkeyCatalog.Require("capture.region").DisplayName, hotkeyText);
         _captureItem.Click += (_, _) => CaptureRequested?.Invoke();
 
-        _clipboardPinItem = new FocalMenuItem("从剪贴板贴图");
+        _clipboardPinItem = new FocalMenuItem(HotkeyCatalog.Require("capture.pinClipboard").DisplayName);
         _clipboardPinItem.Click += (_, _) => ClipboardPinRequested?.Invoke();
 
         _panelItem = new FocalMenuItem("贴图管理…");
@@ -214,7 +216,7 @@ internal sealed class TrayHost : IDisposable
     /// 刷新「最近颜色」：6 列色块网格（色块 20×20 圆角 2，悬停有反馈），
     /// 底部保留「清空颜色历史」。点击色块仍触发既有的 <see cref="RecentColorSelected"/>。
     /// </summary>
-    public void SyncRecentColors(IReadOnlyList<WhSnap.Core.RgbColor> colors)
+    public void SyncRecentColors(IReadOnlyList<WhSnap.Core.RgbColor> colors, int capacity)
     {
         var dropDown = _recentColorsItem.DropDownItems;
         dropDown.Clear();
@@ -231,7 +233,7 @@ internal sealed class TrayHost : IDisposable
             return;
         }
 
-        var grid = new FocalColorPanel(colors, () => ClearColorHistoryRequested?.Invoke());
+        var grid = new FocalColorPanel(colors, capacity, () => ClearColorHistoryRequested?.Invoke());
         grid.ColorSelected += color => RecentColorSelected?.Invoke(color);
 
         dropDown.Add(new System.Windows.Forms.ToolStripControlHost(grid)

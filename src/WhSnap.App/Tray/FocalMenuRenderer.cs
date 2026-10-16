@@ -574,10 +574,20 @@ internal sealed class FocalColorPanel : Panel
     private const int GapDip = 8;
     private const float HexFontSize = 11f;
 
+    /// <summary>
+    /// 「最近颜色」右上角的计数。容量必须来自实际设置（<c>ColorHistoryRetention</c>），
+    /// 不能写死——写死会与设置页的上限/默认值对不上（评审 P2-9 的"数值矛盾"）。
+    /// </summary>
+    internal static string ColorPanelCapacityText(int count, int capacity)
+    {
+        int shown = Math.Max(capacity, 0);
+        return count == 0 ? $"空 · 最多保留 {shown} 个" : $"{count} 个 · 最多保留 {shown} 个";
+    }
+
     private readonly Font _hexFont;
     private readonly System.Drawing.Color _textFaint;
 
-    public FocalColorPanel(IReadOnlyList<RgbColor> colors, Action clearHistory)
+    public FocalColorPanel(IReadOnlyList<RgbColor> colors, int capacity, Action clearHistory)
     {
         float scale = FocalMenuRenderer.DpiScale;
         int scaledSwatch = Device(SwatchSizeDip, scale);
@@ -617,7 +627,7 @@ internal sealed class FocalColorPanel : Panel
 
         var counter = new Label
         {
-            Text = colors.Count == 0 ? "空" : $"{colors.Count} 个 · 最多保留 12 个",
+            Text = ColorPanelCapacityText(colors.Count, capacity),
             Font = _hexFont,
             ForeColor = textMuted,
             AutoSize = false,

@@ -337,7 +337,7 @@ internal partial class SettingsWindow : Window
         ["AnnotationPalette"] = "逗号分隔的颜色列表，显示成工具栏色块（支持十六进制）。",
         // 系统
         ["AutoStart"] = "随 Windows 登录自动启动（当前用户，不需要管理员权限）。",
-        ["HotkeyConflictPolicy"] = "block 冲突时弹窗询问；save-disabled 保存但停用。",
+        ["HotkeyConflictPolicy"] = "默认冲突时弹窗询问你；也可改成「保存但停用冲突的热键」。",
         // 更新
         ["CheckForUpdatesOnStartup"] = "只读一份很小的 update.json，不会自动下载。",
         ["UpdateChannel"] = "稳定通道只接受正式版，测试通道同时接受预览版。",
@@ -349,7 +349,10 @@ internal partial class SettingsWindow : Window
     /// 说明文案里的 <c>{动作 id}</c> 占位符换成**当前**键位文本。
     /// 理由：键位可改，写死默认键会让改键后的说明变成错的（例如"等价于按 F3"）。
     /// </summary>
-    private string HintFor(SettingDefinition definition)
+    private string HintFor(SettingDefinition definition) => HintText(definition, KeyText);
+
+    /// <summary>自检用：按给定键位解析函数算出说明文案（不构造窗口也能断言"文案跟随绑定"）。</summary>
+    internal static string HintText(SettingDefinition definition, Func<string, string> keyText)
     {
         string hint = Hints.TryGetValue(definition.Key, out string? text) && !string.IsNullOrWhiteSpace(text)
             ? text
@@ -357,7 +360,7 @@ internal partial class SettingsWindow : Window
                 ? $"{definition.Label}：改完立即生效。"
                 : definition.Description;
 
-        return HotkeyPlaceholder.Replace(hint, KeyText);
+        return HotkeyPlaceholder.Replace(hint, keyText);
     }
 
     /// <summary>自检用：取某个配置项当前显示的说明文案（用于断言"文案跟随当前绑定"）。</summary>
@@ -365,6 +368,13 @@ internal partial class SettingsWindow : Window
     {
         var definition = SettingsSchema.All.FirstOrDefault(item => item.Key == settingKey);
         return definition is null ? string.Empty : HintFor(definition);
+    }
+
+    /// <summary>自检用：不构造窗口也能取到某个配置项的说明文案。</summary>
+    internal static string HintTextForTest(string settingKey, Func<string, string> keyText)
+    {
+        var definition = SettingsSchema.All.FirstOrDefault(item => item.Key == settingKey);
+        return definition is null ? string.Empty : HintText(definition, keyText);
     }
 
     /// <summary>动作当前的键位文本；未绑定/已停用时返回"未绑定"。</summary>
@@ -1625,7 +1635,7 @@ internal partial class SettingsWindow : Window
 
             HotkeyBannerText.Text = blocking.Count > 0
                 ? blocking[0].Message + (blocking[0].Advice is null ? string.Empty : $" → {blocking[0].Advice}")
-                : systemConflicts[0].Message + "　（L1 试注册判定；换成别的组合即可，已绑定的键位不会被静默丢弃）";
+                : systemConflicts[0].Message + "　（实测注册判定；换成别的组合即可，已绑定的键位不会被静默丢弃）";
         }
 
         // 状态条：结论 + 配置路径（数字 / 路径走等宽）。冲突细节在键位行与横幅上，这里只说个数，
@@ -1643,7 +1653,7 @@ internal partial class SettingsWindow : Window
         }
         else if (_probeResults.Count > 0)
         {
-            parts.Add("L1 试注册：全部可用");
+            parts.Add("系统占用检测：全部可用");
         }
 
         StatusText.Text = string.Join("　|　", parts);

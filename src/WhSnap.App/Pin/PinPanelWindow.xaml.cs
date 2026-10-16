@@ -179,6 +179,22 @@ internal partial class PinPanelWindow : Window
         return binding is { IsActive: true } ? binding.Keys!.Trim() : fallback;
     }
 
+    /// <summary>
+    /// 空状态提示（自检可直接调用）。两处要求：
+    /// ① 键位取当前绑定而不是写死默认值；② 动作名与 <see cref="HotkeyCatalog"/> 完全一致
+    /// （同一个动作在托盘、设置、空状态里必须是同一个名字）。
+    /// </summary>
+    internal static string ComposeEmptyHint(Func<string, string, string> keyText)
+    {
+        string clipboardAction = HotkeyCatalog.Require("capture.pinClipboard").DisplayName;
+        string pinAction = HotkeyCatalog.Require("overlay.pin").DisplayName;
+        string pinKeys = keyText("overlay.pin", string.Empty);
+
+        return string.IsNullOrWhiteSpace(pinKeys)
+            ? $"把图放进剪贴板后从托盘菜单选「{clipboardAction}」；遮罩里的「{pinAction}」当前未绑定，可在设置里给它设一个键。"
+            : $"把图放进剪贴板后从托盘菜单选「{clipboardAction}」，或在截图遮罩里按 {pinKeys} {pinAction}。";
+    }
+
     private void Refresh()
     {        var rows = _manager.Pins
             .OrderByDescending(pin => pin.ZIndex)
@@ -191,10 +207,7 @@ internal partial class PinPanelWindow : Window
 
         if (rows.Count == 0)
         {
-            // 键位可改，说明里的键必须取当前绑定（写死 F3 会在改键后变成错的指引）。
-            EmptyHintText.Text =
-                $"把图放进剪贴板后从托盘菜单选「从剪贴板贴图」，"
-                + $"或在截图遮罩里按 {ActionKeyText("overlay.pin", "F3")} 直接贴图。";
+            EmptyHintText.Text = ComposeEmptyHint(ActionKeyText);
         }
 
         int total = _manager.Count;

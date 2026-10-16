@@ -204,41 +204,37 @@ internal partial class AnnotationWindow : Window
     /// 动作条的键位提示。工具与快捷键都是**从目录与当前绑定算出来的**：
     /// 写死字母和 Ctrl+Z 会在改键后变成错的说明，改键后这里必须跟着变。
     /// </summary>
-    private string ToolbarHint
+    private string ToolbarHint => ComposeToolbarHint(_settings);
+
+    /// <summary>自检用：按给定配置算出动作条提示（不构造窗口也能验证"文案跟随绑定"）。</summary>
+    internal static string ComposeToolbarHint(AppSettings settings)
     {
-        get
+        var parts = new List<string>();
+
+        foreach (var action in HotkeyCatalog.All.Where(a => a.Category == "标注工具"))
         {
-            var parts = new List<string>();
-            var settings = _settings;
+            string? keys = BindingKeys(action.Id, settings, HotkeyScope.Annotation);
 
-            foreach (var action in HotkeyCatalog.All.Where(a => a.Category == "标注工具"))
+            if (!string.IsNullOrWhiteSpace(keys))
             {
-                string? keys = BindingKeys(action.Id, settings, HotkeyScope.Annotation);
-
-                if (!string.IsNullOrWhiteSpace(keys))
-                {
-                    parts.Add($"{keys} {action.DisplayName.Replace("工具：", string.Empty, StringComparison.Ordinal)}");
-                }
+                parts.Add($"{keys} {action.DisplayName.Replace("工具：", string.Empty, StringComparison.Ordinal)}");
             }
-
-            parts.Add($"{Keycap("annotation.undo")}/{Keycap("annotation.redo")} 撤销重做");
-            parts.Add("[ ] 线宽");
-
-            int paletteCount = ParsePalette(settings.AnnotationPalette).Count;
-
-            if (paletteCount > 0)
-            {
-                parts.Add($"1-{paletteCount} 换色");
-            }
-
-            return "工具键位与截图/贴图窗口一致，全部可在设置里改：" + string.Join(" · ", parts);
         }
+
+        parts.Add($"{Keycap("annotation.undo", settings)}/{Keycap("annotation.redo", settings)} 撤销重做");
+        parts.Add("[ ] 线宽");
+
+        int paletteCount = ParsePalette(settings.AnnotationPalette).Count;
+
+        if (paletteCount > 0)
+        {
+            parts.Add($"1-{paletteCount} 换色");
+        }
+
+        return "工具键位与截图/贴图窗口一致，全部可在设置里改：" + string.Join(" · ", parts);
     }
 
-    /// <summary>把 <c>Ctrl+Z</c> 显示成键帽观感的 <c>Ctrl Z</c>（数据字体下更易读）。</summary>
-    private string Keycap(string actionId) => Keycap(actionId, _settings);
-
-    private string Keycap(string actionId, AppSettings settings)
+    private static string Keycap(string actionId, AppSettings settings)
     {
         string? keys = BindingKeys(actionId, settings, HotkeyScope.Annotation);
         return string.IsNullOrWhiteSpace(keys) ? "未绑定" : keys.Replace("+", " ", StringComparison.Ordinal);
@@ -272,6 +268,11 @@ internal partial class AnnotationWindow : Window
         Apply("annotation.redo", RedoKeycap, RedoButton);
         Apply("annotation.cancel", CancelKeycap, CancelButton);
         Apply("annotation.confirm", ConfirmKeycap, ConfirmButton);
+
+        // 按钮文字也取动作表：同一个动作在设置页与工具栏里必须是同一个名字
+        // （评审 P2-9：「完成」/「确认」/「确认截图」三处三名）
+        CancelLabel.Text = HotkeyCatalog.Require("annotation.cancel").DisplayName;
+        ConfirmLabel.Text = HotkeyCatalog.Require("annotation.confirm").DisplayName;
     }
 
     // ---------------------------------------------------------------- 生命周期
@@ -428,8 +429,10 @@ internal partial class AnnotationWindow : Window
             button.IsChecked = active;
 
             // 选中 = accent-tint 底 + 琥珀图标（Focal.RailItem 给底，图标/快捷键字母在这里给色）
+            // 快捷键字母用 OnDarkMuted 而不是 OnDarkFaint：它是"这个工具怎么按"的唯一线索，
+            // 低对比度会让工具键事实上不可发现（评审 P1-5 的遗留项）。
             icon.SetValue(TextElement.ForegroundProperty, active ? FocalPalette.Accent : FocalPalette.OnDarkFaint);
-            key.Foreground = active ? FocalPalette.Accent : FocalPalette.OnDarkFaint;
+            key.Foreground = active ? FocalPalette.Accent : FocalPalette.OnDarkMuted;
         }
 
         foreach (var swatch in _swatches)

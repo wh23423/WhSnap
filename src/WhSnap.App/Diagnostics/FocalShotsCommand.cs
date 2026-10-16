@@ -6,7 +6,9 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using WhSnap.Core;
 using WhSnap.Interop;
+using WhSnap.Services;
 using WhSnap.Theme;
 
 namespace WhSnap.Diagnostics;
@@ -481,9 +483,9 @@ internal static class FocalShotsCommand
 
         page.Children.Add(SectionLabel("横幅（语义色只出现在状态面）/ 卡片 / 胶囊"));
         var banners = new StackPanel();
-        banners.Children.Add(Banner("Focal.BannerWarn", "Focal.SignalWarnBrush", "warning", "检测到热键冲突", "Ctrl+Alt+A 已被其他程序占用，点这里改绑或先停用。"));
+        banners.Children.Add(Banner("Focal.BannerWarn", "Focal.SignalWarnBrush", "warning", "检测到热键冲突", $"{HotkeyCatalog.CaptureRegionKeys} 已被其他程序占用，点这里改绑或先停用。"));
         banners.Children.Add(Banner("Focal.BannerDanger", "Focal.SignalDangerBrush", "x", "配置写入失败", "目标目录不可写；已回滚到上一次的配置。"));
-        banners.Children.Add(Banner("Focal.BannerOk", "Focal.SignalOkBrush", "check", "更新已安装", "WhSnap 1.0.0-preview.2 已就绪，重启后生效。"));
+        banners.Children.Add(Banner("Focal.BannerOk", "Focal.SignalOkBrush", "check", "更新已安装", $"WhSnap {UpdateService.GetCurrentVersion()} 已就绪，重启后生效。"));
         page.Children.Add(Section(banners));
 
         page.Children.Add(SectionLabel("列表行（悬停才出操作）/ 导航项 / 菜单项"));

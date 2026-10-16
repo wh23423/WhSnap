@@ -6,6 +6,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using WhSnap.Core;
+using WhSnap.Services;
 using WhSnap.Theme;
 
 namespace WhSnap.Onboarding;
@@ -71,9 +72,12 @@ internal sealed partial class OnboardingWindow : Window
         Width = OnboardingWidth;
         Height = OnboardingHeight;
 
-        // 键位默认值取 Core 的权威目录（capture.region = F1 / capture.pinClipboard = F3 / settings.open = Ctrl+Shift+,）
+        // 键位默认值取 Core 的权威目录（capture.region / capture.pinClipboard / settings.open）
         ResetBindings(HotkeyBindings.Resolve());
         AutoStartToggle.IsChecked = true;
+
+        // 标题栏版本号读程序集，不写死：写死会在下次发版后显示旧版本
+        VersionText.Text = "v" + UpdateService.GetCurrentVersion();
 
         PreviewKeyDown += OnPreviewKeyDown;
         Loaded += (_, _) => RowCapture.Focus();
@@ -253,18 +257,36 @@ internal sealed partial class OnboardingWindow : Window
 
     private void RefreshRows()
     {
+        // 行标题一律取动作表：同一个动作在向导 / 托盘 / 设置里必须是同一个名字
+        // （评审 P1-7：向导叫"截图"、设置叫"截图（区域）"会让人对不上号）。
+        RowCaptureTitle.Text = HotkeyCatalog.Require("capture.region").DisplayName;
+        RowPinClipboardTitle.Text = HotkeyCatalog.Require("capture.pinClipboard").DisplayName;
+        RowSettingsTitle.Text = HotkeyCatalog.Require("settings.open").DisplayName;
+
         ApplyRow(RowCapture, "capture.region");
         ApplyRow(RowPinClipboard, "capture.pinClipboard");
         ApplyRow(RowSettings, "settings.open");
 
         // Hero 与自启动说明里的键位同样要跟着绑定走：写死 F1 会在用户改键后
         // 与同一页的键帽自相矛盾（"按一下 F1" + 一枚显示 Ctrl+Shift+A 的键帽）。
-        string captureKeys = string.IsNullOrWhiteSpace(BindingKeys("capture.region"))
-            ? "快捷键"
-            : FormatKeys(BindingKeys("capture.region"));
+        string? captureKeys = BindingKeys("capture.region");
 
-        HeroHeadline.Text = $"按一下 {captureKeys}，就能截下屏幕上的任何一块";
-        AutoStartHint.Text = $"登录 Windows 后自动驻留托盘，{captureKeys} 随时可用。之后可以在托盘菜单里改。";
+        HeroHeadline.Text = ComposeHeroText(captureKeys);
+        AutoStartHint.Text = ComposeAutoStartHint(captureKeys);
+    }
+
+    /// <summary>自检用：Hero 文案（键位取当前绑定，未绑定时给可执行的指引而不是写死一个键）。</summary>
+    internal static string ComposeHeroText(string? captureKeys)
+    {
+        string keys = string.IsNullOrWhiteSpace(captureKeys) ? "快捷键" : FormatKeys(captureKeys);
+        return $"按一下 {keys}，就能截下屏幕上的任何一块";
+    }
+
+    /// <summary>自检用：自启动说明文案。</summary>
+    internal static string ComposeAutoStartHint(string? captureKeys)
+    {
+        string keys = string.IsNullOrWhiteSpace(captureKeys) ? "快捷键" : FormatKeys(captureKeys);
+        return $"登录 Windows 后自动驻留托盘，{keys} 随时可用。之后可以在托盘菜单里改。";
     }
 
     private void ApplyRow(Button row, string actionId)

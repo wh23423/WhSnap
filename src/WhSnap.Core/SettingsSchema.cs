@@ -46,7 +46,7 @@ public static class SettingsSchema
     [
         // ---- 截图 ----
         new("CaptureBackend", "截图", "采集后端", SettingKind.Choice,
-            "auto 会按 WGC → DXGI → GDI 依次尝试并自动降级；某个后端在这台机器上异常时可手动固定。",
+            "自动会按 WGC → DXGI → GDI 依次尝试并自动降级；某个后端在这台机器上异常时再手动固定。",
             Options:
             [
                 new("auto", "自动（推荐）"),
@@ -54,18 +54,19 @@ public static class SettingsSchema
                 new("dxgi", "DXGI（Desktop Duplication）"),
                 new("gdi", "GDI（BitBlt 兜底）"),
             ]),
-        new("CopyOnCapture", "截图", "确认后复制到剪贴板", SettingKind.Bool, "按 Enter 确认时执行。"),
-        new("SaveOnCapture", "截图", "确认后保存文件", SettingKind.Bool, "按 Enter 确认时执行。"),
-        new("PinOnCapture", "截图", "确认后直接贴图", SettingKind.Bool, "开启后 Enter 会同时贴图；也可在遮罩里按 F3 只贴图。"),
+        new("CopyOnCapture", "截图", "确认后复制到剪贴板", SettingKind.Bool, "按 {overlay.confirm} 确认时执行。"),
+        new("SaveOnCapture", "截图", "确认后保存文件", SettingKind.Bool, "按 {overlay.confirm} 确认时执行。"),
+        new("PinOnCapture", "截图", "确认后直接贴图", SettingKind.Bool,
+            "开启后 {overlay.confirm} 会同时贴图；也可在遮罩里按 {overlay.pin} 只贴图。"),
         new("OverlayDimOpacity", "截图", "遮罩暗度", SettingKind.Int, "选区以外区域的压暗程度。", 0, 90, 5, "%"),
         new("ElementDetectionEnabled", "截图", "启用元素检测", SettingKind.Bool,
-            "遮罩显示时自动高亮光标下的界面元素；单击即可选中该元素，Tab 由内向外切换候选。"),
+            "遮罩显示时自动高亮光标下的界面元素；单击即可选中该元素，{overlay.cycleElement} 由内向外切换候选。"),
         new("ElementDetectionUseUia", "截图", "元素检测使用 UI Automation", SettingKind.Bool,
             "开启后能识别按钮/输入框等真实控件；关闭则只按顶层窗口矩形检测（更快，但粒度粗）。"),
 
         // ---- 取色器 ----
         new("ColorCopyFormat", "取色器", "复制颜色时的表示法", SettingKind.Choice,
-            "在遮罩里按 C 取色时复制到剪贴板的格式。",
+            "在遮罩里按 {overlay.pickColor} 取色时复制到剪贴板的格式。",
             Options:
             [
                 new("hex", "#RRGGBB（推荐）"),
@@ -127,8 +128,8 @@ public static class SettingsSchema
                 new("badge", "序号"),
                 new("highlight", "高亮"),
             ]),
-        new("AnnotationStrokeColor", "标注", "默认颜色", SettingKind.Color, "工具栏也可以随时换色（1-8 快捷键）。"),
-        new("AnnotationStrokeWidth", "标注", "默认线宽", SettingKind.Int, "`[` / `]` 可临时调整。", 1, 64, 1, "px"),
+        new("AnnotationStrokeColor", "标注", "默认颜色", SettingKind.Color, "工具栏也可以随时换色（数字键 1-8 是固定交互，不可改键）。"),
+        new("AnnotationStrokeWidth", "标注", "默认线宽", SettingKind.Int, "在画布上按 [ 与 ] 可临时调整。", 1, 64, 1, "px"),
         new("AnnotationFillOpacity", "标注", "矩形/椭圆填充不透明度", SettingKind.Int, "0 = 不填充。", 0, 100, 5, "%"),
         new("AnnotationFontSize", "标注", "文字/序号字号", SettingKind.Double, "按物理像素渲染。", 8, 72, 1, "px"),
         new("AnnotationMosaicBlock", "标注", "马赛克块大小", SettingKind.Int, "越大越糊。", 2, 64, 1, "px"),
@@ -139,9 +140,9 @@ public static class SettingsSchema
             "逗号分隔的颜色列表，显示为工具栏上的色块；支持 #RGB / #RRGGBB / rgb() / hsl()。"),
 
         // ---- 系统集成 ----
-        new("AutoStart", "系统", "开机自启", SettingKind.Bool, "随 Windows 登录自动启动（per-user，无需管理员）。"),
+        new("AutoStart", "系统", "开机自启", SettingKind.Bool, "随 Windows 登录自动启动（只对当前用户生效，无需管理员）。"),
         new("HotkeyConflictPolicy", "系统", "热键冲突处理", SettingKind.Choice,
-            "block：冲突时弹窗让你选择（推荐，默认）；save-disabled：冲突时直接保存但停用该动作，不弹窗。两种都不会静默失败。",
+            "默认在冲突时弹窗让你选择；也可改为「保存但停用冲突的热键」。两种都不会静默失败。",
             Options:
             [
                 new("block", "阻断并询问我（推荐）"),

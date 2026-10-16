@@ -131,10 +131,11 @@
                                    Text="WhSnap"
                                    Style="{StaticResource Focal.TitleBarText}" />
 
-                        <TextBlock Grid.Column="3"
+                        <TextBlock x:Name="VersionText"
+                                   Grid.Column="3"
                                    Margin="0,0,12,0"
                                    VerticalAlignment="Center"
-                                   Text="v1.0.0-preview.2"
+                                   Text="v1.0.0"
                                    FontFamily="{StaticResource Focal.DataFont}"
                                    FontSize="{StaticResource Focal.CaptionSize}"
                                    Foreground="{StaticResource Focal.OnDarkFaintBrush}" />
@@ -172,7 +173,7 @@
                     <TextBlock x:Name="HeroHeadline"
                                Margin="0,12,0,0"
                                TextAlignment="Center"
-                               Text="按一下 F1，就能截下屏幕上的任何一块"
+                               Text="按一下 Ctrl+Shift+A，就能截下屏幕上的任何一块"
                                Style="{StaticResource Focal.DisplayText}" />
 
                     <!-- 副标题断行是设计的一部分：自己断，不交给居中折行 -->
@@ -181,7 +182,7 @@
                                    Text="框选要保留的区域 → 用方向键微调边界，需要时加上标注 →"
                                    Style="{StaticResource Focal.CaptionText}" />
                         <TextBlock TextAlignment="Center"
-                                   Text="复制到剪贴板、存成文件，或者贴成一张随时可见的浮图。"
+                                   Text="复制到剪贴板、存成文件，或者贴成一张随时可见的贴图。"
                                    Style="{StaticResource Focal.CaptionText}" />
                     </StackPanel>
 
@@ -233,7 +234,7 @@
                             </Border>
 
                             <StackPanel Grid.Column="1" Width="520" Margin="12,0,0,0" VerticalAlignment="Center">
-                                <TextBlock Text="截图" Style="{StaticResource Focal.BodyStrongText}" />
+                                <TextBlock x:Name="RowCaptureTitle" Text="截图（区域）" Style="{StaticResource Focal.BodyStrongText}" />
                                 <TextBlock x:Name="RowCaptureHint"
                                            Margin="0,3,0,0"
                                            Text="全局热键，任何程序前台时都能唤起框选遮罩"
@@ -295,10 +296,10 @@
                             </Border>
 
                             <StackPanel Grid.Column="1" Width="520" Margin="12,0,0,0" VerticalAlignment="Center">
-                                <TextBlock Text="贴图剪贴板" Style="{StaticResource Focal.BodyStrongText}" />
+                                <TextBlock x:Name="RowPinClipboardTitle" Text="贴图剪贴板内容" Style="{StaticResource Focal.BodyStrongText}" />
                                 <TextBlock x:Name="RowPinClipboardHint"
                                            Margin="0,3,0,0"
-                                           Text="把剪贴板里的图片直接贴成浮图，截完图按一下就够"
+                                           Text="把剪贴板里的图片直接贴成一张贴图，截完图按一下就够"
                                            Style="{StaticResource Focal.CaptionText}" />
                                 <StackPanel x:Name="RowPinClipboardState" Visibility="Collapsed" Orientation="Horizontal">
                                     <Ellipse Width="6" Height="6"
@@ -357,7 +358,7 @@
                             </Border>
 
                             <StackPanel Grid.Column="1" Width="520" Margin="12,0,0,0" VerticalAlignment="Center">
-                                <TextBlock Text="打开设置" Style="{StaticResource Focal.BodyStrongText}" />
+                                <TextBlock x:Name="RowSettingsTitle" Text="打开设置" Style="{StaticResource Focal.BodyStrongText}" />
                                 <TextBlock x:Name="RowSettingsHint"
                                            Margin="0,3,0,0"
                                            Text="随时调出设置窗口，改键位、改保存位置、改遮罩浓度"
@@ -484,7 +485,7 @@
                                                  Foreground="{StaticResource Focal.OnDarkFaintBrush}" />
                                 <TextBlock Margin="6,0,0,0"
                                            VerticalAlignment="Center"
-                                           Text="首次运行向导 · 第 1 步，共 3 步"
+                                           Text="首次运行设置 · 全部可改"
                                            FontFamily="{StaticResource Focal.TextFont}"
                                            FontSize="{StaticResource Focal.CaptionSize}"
                                            Foreground="{StaticResource Focal.OnDarkFaintBrush}" />
