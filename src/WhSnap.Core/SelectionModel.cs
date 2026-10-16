@@ -35,6 +35,11 @@ public enum NudgeDirection
 ///   * 平移：BeginMove + Update（抓住选区内部拖动）
 /// 以及不依赖鼠标的 Nudge（方向键 1px / Shift 10px 微调）。
 ///
+/// 按住 Shift 时（<see cref="AspectLock"/> = true）：
+///   * 新建 → 拖出**正方形**（截图工具的高频技巧，边长跟随较长的那条边）；
+///   * 抓四角手柄 → 保持**开始调整时**的宽高比等比缩放（抓边手柄不受影响，
+///     因为单边拉伸没有唯一的等比解）。
+///
 /// 纯逻辑、无 UI 依赖，可直接单测——多屏与混合 DPI 下的坐标正确性全靠这一层保证。
 /// </summary>
 public sealed class SelectionModel(PhysicalRect bounds)
@@ -54,8 +59,12 @@ public sealed class SelectionModel(PhysicalRect bounds)
     private PhysicalPoint _moveStart;
     private PhysicalRect _moveOrigin;
     private SelectionHandle _resizeHandle;
+    private double _resizeAspectRatio;
 
     public const int MinSize = 1;
+
+    /// <summary>按住 Shift 时的等比约束：新建出正方形、抓角手柄保持原宽高比。</summary>
+    public bool AspectLock { get; set; }
 
     public PhysicalPoint? Anchor => _anchor;
 
@@ -92,6 +101,9 @@ public sealed class SelectionModel(PhysicalRect bounds)
 
         _mode = Mode.Resize;
         _resizeHandle = handle;
+        _resizeAspectRatio = Current is { IsEmpty: false, Height: > 0 }
+            ? (double)Current.Width / Current.Height
+            : 0;
         Cursor = Clamp(point);
     }
 
@@ -115,15 +127,17 @@ public sealed class SelectionModel(PhysicalRect bounds)
             case Mode.Create:
                 if (_anchor is { } anchor)
                 {
-                    Current = PhysicalRect
-                        .FromPoints(anchor.X, anchor.Y, clamped.X, clamped.Y)
-                        .ClampTo(_bounds);
+                    Current = AspectLock
+                        ? CreateSquare(anchor, clamped)
+                        : PhysicalRect
+                            .FromPoints(anchor.X, anchor.Y, clamped.X, clamped.Y)
+                            .ClampTo(_bounds);
                 }
 
                 break;
 
             case Mode.Resize:
-                Current = ResizeTo(clamped);
+                Current = AspectLock ? ResizeKeepingRatio(clamped) : ResizeTo(clamped);
                 break;
 
             case Mode.Move:
@@ -294,6 +308,79 @@ public sealed class SelectionModel(PhysicalRect bounds)
         }
 
         return SelectionHandle.Inside;
+    }
+
+    /// <summary>新建正方形（按住 Shift）：边长取拖拽距离较长的一条边，方向跟着鼠标走，并夹在 bounds 内。</summary>
+    private PhysicalRect CreateSquare(PhysicalPoint anchor, PhysicalPoint point)
+    {
+        int dx = point.X - anchor.X;
+        int dy = point.Y - anchor.Y;
+        int signX = dx < 0 ? -1 : 1;
+        int signY = dy < 0 ? -1 : 1;
+
+        // 允许"只按下没拖动"（size = 0）保持空选区，与普通框选一致
+        int size = Math.Max(Math.Abs(dx), Math.Abs(dy));
+
+        if (size > 0)
+        {
+            int roomX = signX > 0 ? _bounds.Right - anchor.X : anchor.X - _bounds.X;
+            int roomY = signY > 0 ? _bounds.Bottom - anchor.Y : anchor.Y - _bounds.Y;
+            size = Math.Max(MinSize, Math.Min(size, Math.Min(roomX, roomY)));
+        }
+
+        return PhysicalRect
+            .FromPoints(anchor.X, anchor.Y, anchor.X + (signX * size), anchor.Y + (signY * size))
+            .ClampTo(_bounds);
+    }
+
+    /// <summary>
+    /// 抓四角手柄时按开始调整时的宽高比等比缩放；抓边手柄没有唯一的等比解，退回普通缩放。
+    /// 以"较大的一边主导"，手感是选区跟着鼠标走而不是被另一边拖住。
+    /// </summary>
+    private PhysicalRect ResizeKeepingRatio(PhysicalPoint point)
+    {
+        bool corner = _resizeHandle
+            is SelectionHandle.TopLeft or SelectionHandle.TopRight or SelectionHandle.BottomLeft or SelectionHandle.BottomRight;
+
+        if (!corner || _resizeAspectRatio <= 0)
+        {
+            return ResizeTo(point);
+        }
+
+        int dirX = _resizeHandle is SelectionHandle.TopLeft or SelectionHandle.BottomLeft ? -1 : 1;
+        int dirY = _resizeHandle is SelectionHandle.TopLeft or SelectionHandle.TopRight ? -1 : 1;
+
+        int fixedX = dirX > 0 ? Current.X : Current.Right;
+        int fixedY = dirY > 0 ? Current.Y : Current.Bottom;
+
+        double rawWidth = Math.Abs(point.X - fixedX);
+        double rawHeight = Math.Abs(point.Y - fixedY);
+        double width = Math.Max(rawWidth, rawHeight * _resizeAspectRatio);
+
+        double roomX = dirX > 0 ? _bounds.Right - fixedX : fixedX - _bounds.X;
+        double roomY = dirY > 0 ? _bounds.Bottom - fixedY : fixedY - _bounds.Y;
+
+        width = Math.Min(width, Math.Max(roomX, MinSize));
+        double height = width / _resizeAspectRatio;
+
+        if (height > roomY)
+        {
+            height = Math.Max(roomY, MinSize);
+            width = height * _resizeAspectRatio;
+        }
+
+        if (height < MinSize)
+        {
+            height = MinSize;
+            width = Math.Max(height * _resizeAspectRatio, MinSize);
+        }
+
+        int w = Math.Max(MinSize, (int)Math.Round(width, MidpointRounding.AwayFromZero));
+        int h = Math.Max(MinSize, (int)Math.Round(height, MidpointRounding.AwayFromZero));
+        int x = dirX > 0 ? fixedX : fixedX - w;
+        int y = dirY > 0 ? fixedY : fixedY - h;
+
+        return new PhysicalRect(x, y, w, h).ClampTo(_bounds);
     }
 
     private PhysicalRect ResizeTo(PhysicalPoint point)

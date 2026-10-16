@@ -113,6 +113,84 @@ public class SelectionEditingTests
         Assert.Equal(SelectionModel.MinSize, model.Current.Width);
     }
 
+    // ── 按住 Shift 的等比约束（评审 P1-6：截图工具的高频技巧，原先全仓库无实现） ──
+
+    [Fact]
+    public void AspectLock_makes_new_selection_square()
+    {
+        var model = Model();
+        model.AspectLock = true;
+
+        model.Begin(new PhysicalPoint(100, 100));
+        model.Update(new PhysicalPoint(400, 250)); // 300×150 → 取较长边 300
+
+        Assert.Equal(new PhysicalRect(100, 100, 300, 300), model.Current);
+    }
+
+    [Fact]
+    public void AspectLock_keeps_drag_direction()
+    {
+        var model = Model();
+        model.AspectLock = true;
+
+        model.Begin(new PhysicalPoint(400, 400));
+        model.Update(new PhysicalPoint(250, 300)); // 往左上拖 150×100 → 边长 150
+
+        Assert.Equal(new PhysicalRect(250, 250, 150, 150), model.Current);
+    }
+
+    [Fact]
+    public void AspectLock_clamps_square_into_bounds()
+    {
+        var model = Model(200, 200);
+        model.AspectLock = true;
+
+        model.Begin(new PhysicalPoint(100, 100));
+        model.Update(new PhysicalPoint(400, 400)); // 越界 → 夹到 100×100
+
+        Assert.Equal(new PhysicalRect(100, 100, 100, 100), model.Current);
+    }
+
+    [Fact]
+    public void AspectLock_corner_resize_keeps_original_ratio()
+    {
+        // 2:1 的选区，抓右下角：宽按鼠标走，高按比例跟
+        var model = WithSelection(new PhysicalRect(100, 100, 200, 100));
+        model.AspectLock = true;
+
+        model.BeginResize(SelectionHandle.BottomRight, new PhysicalPoint(300, 200));
+        model.Update(new PhysicalPoint(500, 220));
+
+        Assert.Equal(new PhysicalRect(100, 100, 400, 200), model.Current);
+    }
+
+    [Fact]
+    public void AspectLock_edge_resize_falls_back_to_plain_resize()
+    {
+        // 单边拉伸没有唯一的等比解，退回普通缩放而不是造一个假行为
+        var model = WithSelection(new PhysicalRect(100, 100, 200, 100));
+        model.AspectLock = true;
+
+        model.BeginResize(SelectionHandle.Right, new PhysicalPoint(300, 150));
+        model.Update(new PhysicalPoint(400, 150));
+
+        Assert.Equal(new PhysicalRect(100, 100, 300, 100), model.Current);
+    }
+
+    [Fact]
+    public void AspectLock_released_mid_drag_returns_to_free_form()
+    {
+        var model = Model();
+
+        model.Begin(new PhysicalPoint(100, 100));
+        model.AspectLock = true;
+        model.Update(new PhysicalPoint(400, 250));
+        model.AspectLock = false;
+        model.Update(new PhysicalPoint(400, 250));
+
+        Assert.Equal(new PhysicalRect(100, 100, 300, 150), model.Current);
+    }
+
     [Fact]
     public void Resize_is_clamped_to_bounds()
     {

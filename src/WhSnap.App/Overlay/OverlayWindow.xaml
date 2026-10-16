@@ -168,21 +168,25 @@
             </Border>
         </Canvas>
 
-        <!-- 顶部提示条：一次性把全部键位说清楚（键位来自当前绑定，不是写死的默认值） -->
+        <!-- 顶部提示条：把可发现性一次讲清楚（键位来自当前绑定，不是写死的默认值）。
+             内容变多后在窄屏上由 WrapPanel 自动折行，高度不再写死。 -->
         <Border x:Name="HintBar"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Top"
                 Margin="0,24,0,0"
-                Height="{StaticResource Focal.HintbarHeight}"
+                MinHeight="{StaticResource Focal.HintbarHeight}"
                 Background="{StaticResource Focal.HintSurfaceBrush}"
                 BorderBrush="{StaticResource Focal.HairlineDarkBrush}"
                 BorderThickness="1"
                 CornerRadius="{StaticResource Focal.RadiusPanel}"
-                Padding="12,0,12,0"
+                Padding="12,5,12,5"
                 IsHitTestVisible="False">
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <theme:FocalIcon Icon="info" Size="14" Foreground="{StaticResource Focal.AccentBrush}" />
+            <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <theme:FocalIcon Icon="info" Size="14" Foreground="{StaticResource Focal.AccentBrush}"
+                                 VerticalAlignment="Center" />
                 <TextBlock Text="拖动框选" Margin="8,0,0,0" Style="{StaticResource Focal.CaptionText}"
+                           VerticalAlignment="Center" />
+                <TextBlock Text="（按住 Shift 出正方形）" Margin="4,0,0,0" Style="{StaticResource Focal.CaptionText}"
                            VerticalAlignment="Center" />
                 <TextBlock Text="·" Margin="8,0,8,0" Style="{StaticResource Focal.CaptionText}"
                            Foreground="{StaticResource Focal.OnDarkFaintBrush}" VerticalAlignment="Center" />
@@ -191,36 +195,53 @@
                     <Border Style="{StaticResource Focal.Kbd}">
                         <TextBlock x:Name="HintTabKey" Style="{StaticResource Focal.KbdText}" />
                     </Border>
-                    <TextBlock Text="切换" Margin="4,0,0,0" Style="{StaticResource Focal.CaptionText}"
+                    <TextBlock Text="切换候选" Margin="4,0,0,0" Style="{StaticResource Focal.CaptionText}"
                                VerticalAlignment="Center" />
                 </StackPanel>
                 <TextBlock Text="·" Margin="8,0,8,0" Style="{StaticResource Focal.CaptionText}"
                            Foreground="{StaticResource Focal.OnDarkFaintBrush}" VerticalAlignment="Center" />
-                <TextBlock Text="方向键微调" Style="{StaticResource Focal.CaptionText}" VerticalAlignment="Center" />
+                <TextBlock Text="方向键微调 1px · Shift 10px · Ctrl 改选区大小" Style="{StaticResource Focal.CaptionText}"
+                           VerticalAlignment="Center" />
+                <TextBlock Text="·" Margin="8,0,8,0" Style="{StaticResource Focal.CaptionText}"
+                           Foreground="{StaticResource Focal.OnDarkFaintBrush}" VerticalAlignment="Center" />
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border Style="{StaticResource Focal.Kbd}">
+                        <TextBlock x:Name="HintAnnotateKey" Style="{StaticResource Focal.KbdText}" />
+                    </Border>
+                    <TextBlock Text="标注" Margin="4,0,0,0" Style="{StaticResource Focal.CaptionText}"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Center">
+                    <Border Style="{StaticResource Focal.Kbd}">
+                        <TextBlock x:Name="HintColorKey" Style="{StaticResource Focal.KbdText}" />
+                    </Border>
+                    <TextBlock Text="取色" Margin="4,0,0,0" Style="{StaticResource Focal.CaptionText}"
+                               VerticalAlignment="Center" />
+                </StackPanel>
                 <TextBlock Text="·" Margin="8,0,8,0" Style="{StaticResource Focal.CaptionText}"
                            Foreground="{StaticResource Focal.OnDarkFaintBrush}" VerticalAlignment="Center" />
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <Border Style="{StaticResource Focal.Kbd}">
                         <TextBlock x:Name="HintEnterKey" Style="{StaticResource Focal.KbdText}" />
                     </Border>
-                    <TextBlock Text="确认" Margin="4,0,0,0" Style="{StaticResource Focal.CaptionText}"
+                    <TextBlock Text="确认截图" Margin="4,0,0,0" Style="{StaticResource Focal.CaptionText}"
                                VerticalAlignment="Center" />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Center">
                     <Border Style="{StaticResource Focal.Kbd}">
                         <TextBlock x:Name="HintPinKey" Style="{StaticResource Focal.KbdText}" />
                     </Border>
-                    <TextBlock Text="贴图" Margin="4,0,0,0" Style="{StaticResource Focal.CaptionText}"
+                    <TextBlock Text="直接贴图" Margin="4,0,0,0" Style="{StaticResource Focal.CaptionText}"
                                VerticalAlignment="Center" />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Center">
                     <Border Style="{StaticResource Focal.Kbd}">
                         <TextBlock x:Name="HintCancelKey" Style="{StaticResource Focal.KbdText}" />
                     </Border>
-                    <TextBlock Text="取消" Margin="4,0,0,0" Style="{StaticResource Focal.CaptionText}"
+                    <TextBlock Text="取消截图" Margin="4,0,0,0" Style="{StaticResource Focal.CaptionText}"
                                VerticalAlignment="Center" />
                 </StackPanel>
-            </StackPanel>
+            </WrapPanel>
         </Border>
 
         <!-- 浮动工具条：遮罩上唯一的操作面（模式组 → 标注 → 动作组 → 结束组）
@@ -259,7 +280,10 @@
                               ToolTip="取色：单击取走光标下的像素颜色并复制">
                     <StackPanel Orientation="Horizontal">
                         <theme:FocalIcon Icon="eyedropper" Size="16" />
-                        <TextBlock Text="取色" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        <TextBlock Text="取色" Margin="6,0,6,0" VerticalAlignment="Center" />
+                        <Border Style="{StaticResource Focal.Kbd}">
+                            <TextBlock x:Name="ToolColorKey" Style="{StaticResource Focal.KbdText}" />
+                        </Border>
                     </StackPanel>
                 </ToggleButton>
 
@@ -270,14 +294,17 @@
                               ToolTip="把当前选区送进标注编辑器">
                     <StackPanel Orientation="Horizontal">
                         <theme:FocalIcon Icon="pencil" Size="16" />
-                        <TextBlock Text="标注" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        <TextBlock Text="标注" Margin="6,0,6,0" VerticalAlignment="Center" />
+                        <Border Style="{StaticResource Focal.Kbd}">
+                            <TextBlock x:Name="ToolAnnotateKey" Style="{StaticResource Focal.KbdText}" />
+                        </Border>
                     </StackPanel>
                 </ToggleButton>
 
                 <Rectangle Style="{StaticResource Focal.DividerV}" Height="22" />
 
                 <Button x:Name="ActionCopy" Style="{StaticResource Focal.Button.Quiet}"
-                        Focusable="False" Click="ActionCopy_Click" ToolTip="复制到剪贴板并结束">
+                        Focusable="False" Click="ActionCopy_Click" ToolTip="只复制到剪贴板，忽略其它开关">
                     <StackPanel Orientation="Horizontal">
                         <theme:FocalIcon Icon="copy" Size="16" />
                         <TextBlock Text="复制" Margin="6,0,6,0" VerticalAlignment="Center" />
@@ -287,7 +314,7 @@
                     </StackPanel>
                 </Button>
                 <Button x:Name="ActionSave" Style="{StaticResource Focal.Button.Quiet}"
-                        Focusable="False" Click="ActionSave_Click" ToolTip="保存到文件并结束">
+                        Focusable="False" Click="ActionSave_Click" ToolTip="只保存文件，忽略其它开关">
                     <StackPanel Orientation="Horizontal">
                         <theme:FocalIcon Icon="save" Size="16" />
                         <TextBlock Text="保存" Margin="6,0,6,0" VerticalAlignment="Center" />
@@ -297,10 +324,10 @@
                     </StackPanel>
                 </Button>
                 <Button x:Name="ActionPin" Style="{StaticResource Focal.Button.Quiet}"
-                        Focusable="False" Click="ActionPin_Click" ToolTip="直接贴到屏幕上">
+                        Focusable="False" Click="ActionPin_Click" ToolTip="把选区直接贴到屏幕上，不进剪贴板、不落盘">
                     <StackPanel Orientation="Horizontal">
                         <theme:FocalIcon Icon="pin" Size="16" />
-                        <TextBlock Text="贴图" Margin="6,0,6,0" VerticalAlignment="Center" />
+                        <TextBlock Text="直接贴图" Margin="6,0,6,0" VerticalAlignment="Center" />
                         <Border Style="{StaticResource Focal.Kbd}">
                             <TextBlock x:Name="ActionPinKey" Style="{StaticResource Focal.KbdText}" />
                         </Border>
@@ -310,10 +337,10 @@
                 <Rectangle Style="{StaticResource Focal.DividerV}" Height="22" />
 
                 <Button x:Name="ActionCancel" Style="{StaticResource Focal.Button.Quiet}"
-                        Focusable="False" Click="ActionCancel_Click" ToolTip="放弃这次截图">
+                        Focusable="False" Click="ActionCancel_Click" ToolTip="放弃这次截图，不产生任何结果">
                     <StackPanel Orientation="Horizontal">
                         <theme:FocalIcon Icon="x" Size="16" />
-                        <TextBlock Text="取消" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        <TextBlock Text="取消截图" Margin="6,0,0,0" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
                 <Button x:Name="ActionConfirm" Style="{StaticResource Focal.Button.Primary}"
@@ -321,7 +348,7 @@
                         ToolTip="按设置执行（复制 / 保存 / 贴图）">
                     <StackPanel Orientation="Horizontal">
                         <theme:FocalIcon Icon="check" Size="16" />
-                        <TextBlock Text="完成" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        <TextBlock Text="确认截图" Margin="6,0,0,0" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
             </StackPanel>

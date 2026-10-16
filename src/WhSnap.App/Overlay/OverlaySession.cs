@@ -139,6 +139,17 @@ internal sealed class OverlaySession
         return binding is { IsActive: true } ? binding.Keys!.Trim() : string.Empty;
     }
 
+    /// <summary>
+    /// 自检用：把按键按**真实的 WPF 路由事件**送进主遮罩窗口（走 <c>OnPreviewKeyDown</c> → <see cref="HandleKey"/>），
+    /// 而不是直接调 <see cref="HandleKey"/> ——「按键真的能到动作」只有走这条路才作数。
+    /// 注意：WPF 的 <c>Keyboard.Modifiers</c> 读的是**真实键盘状态**，所以带修饰键的组合无法在这里伪造，
+    /// 自检对那部分退化为直调 <see cref="HandleKey"/> 并如实标注（见 <c>--ux-test</c>）。
+    /// </summary>
+    internal bool RaisePreviewKey(Key key, ModifierKeys modifiers) => _primary.RaisePreviewKey(key, modifiers);
+
+    /// <summary>自检用：直接构造一个选区（不经过鼠标）。</summary>
+    internal void SetSelectionForTest(PhysicalRect rect) => _selection.SetSelection(rect);
+
     /// <summary>取色模式：单击即取色并结束会话，不产生选区（托盘「取色器」）。</summary>
     public bool ColorPickMode { get; }
 
@@ -236,8 +247,11 @@ internal sealed class OverlaySession
         Broadcast();
     }
 
-    internal void OnPointerMoved(PhysicalPoint absolute)
+    internal void OnPointerMoved(PhysicalPoint absolute, bool lockAspect = false)
     {
+        // 按住 Shift = 等比约束（新建出正方形 / 抓角手柄保持原比例），与截图工具的通用习惯一致。
+        _selection.AspectLock = lockAspect;
+
         // 性能埋点（规划 §2.2 第 2 项）：从收到移动事件到"选区 + 光标 HUD 重绘完成"的同步耗时。
         // UIA 元素高亮是异步到达的，不在这一项里（由 --element-test 的悬停→高亮单独统计）。
         long start = System.Diagnostics.Stopwatch.GetTimestamp();

@@ -149,6 +149,9 @@ internal partial class OverlayWindow : System.Windows.Window
         Width = PhysicalToDip(monitor.Bounds.Width);
         Height = PhysicalToDip(monitor.Bounds.Height);
 
+        // 提示条内容多了以后在窄屏上会超出画面：给一个"屏宽 - 两侧各 24"的上限，让它自己折行。
+        HintBar.MaxWidth = Math.Max(PhysicalToDip(monitor.Bounds.Width) - 48, 240);
+
         SourceInitialized += (_, _) => ApplyPhysicalBounds();
         DpiChanged += (_, _) => ApplyPhysicalBounds();
         _session.ToolChanged += OnToolChanged;
@@ -166,9 +169,13 @@ internal partial class OverlayWindow : System.Windows.Window
         SetKbd(HintEnterKey, _session.KeyText("overlay.confirm"));
         SetKbd(HintPinKey, _session.KeyText("overlay.pin"));
         SetKbd(HintCancelKey, _session.KeyText("overlay.cancel"));
+        SetKbd(HintAnnotateKey, _session.KeyText("overlay.annotate"));
+        SetKbd(HintColorKey, _session.KeyText("overlay.pickColor"));
         SetKbd(ActionCopyKey, _session.KeyText("overlay.copy"));
         SetKbd(ActionSaveKey, _session.KeyText("overlay.save"));
         SetKbd(ActionPinKey, _session.KeyText("overlay.pin"));
+        SetKbd(ToolColorKey, _session.KeyText("overlay.pickColor"));
+        SetKbd(ToolAnnotateKey, _session.KeyText("overlay.annotate"));
         ApplyToolState();
     }
 
@@ -229,6 +236,33 @@ internal partial class OverlayWindow : System.Windows.Window
         base.OnPreviewKeyDown(e);
     }
 
+    /// <summary>
+    /// 自检用：按**真实的 WPF 路由事件**派发一次 PreviewKeyDown（与用户按键走同一条路径：
+    /// 路由事件 → <c>OnPreviewKeyDown</c> → 会话处理）。返回事件是否被处理。
+    /// </summary>
+    internal bool RaisePreviewKey(Key key, ModifierKeys modifiers)
+    {
+        // WPF 的按键处理方法读的是真实键盘状态（Keyboard.Modifiers），伪造不了修饰键：
+        // 状态不一致时如实返回 false，由调用方退化处理，而不是造出"看起来通过"的假证据。
+        if (modifiers != Keyboard.Modifiers)
+        {
+            return false;
+        }
+
+        if (PresentationSource.FromVisual(this) is not { } source)
+        {
+            return false;
+        }
+
+        var args = new System.Windows.Input.KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, key)
+        {
+            RoutedEvent = Keyboard.PreviewKeyDownEvent,
+        };
+
+        RaiseEvent(args);
+        return args.Handled;
+    }
+
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
         base.OnMouseLeftButtonDown(e);
@@ -254,7 +288,8 @@ internal partial class OverlayWindow : System.Windows.Window
             return;
         }
 
-        _session.OnPointerMoved(ToAbsolutePhysical(e.GetPosition(this)));
+        // Shift = 等比约束（正方形 / 保持原比例），按下时就生效，不需要松开重按
+        _session.OnPointerMoved(ToAbsolutePhysical(e.GetPosition(this)), Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
     }
 
     protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
