@@ -42,6 +42,12 @@ public static class HotkeyCatalog
     /// </summary>
     public const string LegacyPinClipboardKeys = "F3";
 
+    /// <summary>
+    /// 旧版本的"切换缩略图模式"默认键。`T` 同时被遮罩的「标注」与标注的「文字工具」占用，
+    /// 贴图与标注是连续流程，一键三义会让人按错，因此改成 `Shift+T`。
+    /// </summary>
+    public const string LegacyPinThumbnailKeys = "T";
+
     /// <summary>当前"区域截图"默认键。</summary>
     public const string CaptureRegionKeys = "Ctrl+Shift+A";
 
@@ -69,13 +75,13 @@ public static class HotkeyCatalog
             "按配置执行复制 / 保存 / 贴图（见「截图」分组）。"),
         new("overlay.cancel", "取消截图", HotkeyScope.Overlay, "遮罩", "Esc",
             "放弃本次截图，不产生任何结果。"),
-        new("overlay.copy", "复制并确认", HotkeyScope.Overlay, "遮罩", "Ctrl+C",
-            "只复制到剪贴板，忽略其它开关。"),
-        new("overlay.save", "保存并确认", HotkeyScope.Overlay, "遮罩", "Ctrl+S",
-            "只保存文件，忽略其它开关。"),
+        new("overlay.copy", "复制", HotkeyScope.Overlay, "遮罩", "Ctrl+C",
+            "只复制到剪贴板，忽略其它开关，并结束本次截图。"),
+        new("overlay.save", "保存", HotkeyScope.Overlay, "遮罩", "Ctrl+S",
+            "只保存文件，忽略其它开关，并结束本次截图。"),
         new("overlay.pin", "直接贴图", HotkeyScope.Overlay, "遮罩", "F3",
             "把选区直接贴到屏幕上，不进剪贴板、不落盘。"),
-        new("overlay.annotate", "进入标注", HotkeyScope.Overlay, "遮罩", "T",
+        new("overlay.annotate", "标注", HotkeyScope.Overlay, "遮罩", "T",
             "打开标注编辑器，在选区内画矩形/箭头/文字/马赛克等（工具键位见「标注」作用域）。"),
         new("overlay.cycleElement", "切换元素检测候选", HotkeyScope.Overlay, "遮罩", "Tab",
             "由内向外在光标下的界面元素之间切换（按钮 → 面板 → 窗口）。"),
@@ -111,13 +117,14 @@ public static class HotkeyCatalog
         // ---- 贴图窗口内按键（鼠标在贴图上/贴图获得焦点时生效）----
         new("pin.copy", "复制到剪贴板", HotkeyScope.Pin, "贴图窗口", "Ctrl+C", "复制原始像素（未缩放、未旋转）到剪贴板。"),
         new("pin.saveAs", "另存为…", HotkeyScope.Pin, "贴图窗口", "Ctrl+S", "按 PNG / JPG / BMP 落盘。"),
-        new("pin.annotate", "贴图内标注", HotkeyScope.Pin, "贴图窗口", "Space", "在贴图上继续标注（M4 提供标注引擎）。"),
+        new("pin.annotate", "贴图内标注", HotkeyScope.Pin, "贴图窗口", "Space", "在贴图上继续标注。"),
         new("pin.rotateCw", "顺时针旋转 90°", HotkeyScope.Pin, "贴图窗口", "1", "绕中心旋转，不会跳位。"),
         new("pin.rotateCcw", "逆时针旋转 90°", HotkeyScope.Pin, "贴图窗口", "2", "绕中心旋转，不会跳位。"),
         new("pin.flipH", "水平翻转", HotkeyScope.Pin, "贴图窗口", "3", string.Empty),
         new("pin.flipV", "垂直翻转", HotkeyScope.Pin, "贴图窗口", "4", string.Empty),
         new("pin.resetZoom", "恢复 100%", HotkeyScope.Pin, "贴图窗口", "0", "清除缩放与缩略图状态。"),
-        new("pin.thumbnail", "切换缩略图模式", HotkeyScope.Pin, "贴图窗口", "T", "按 1/4 显示，原始像素不变。"),
+        new("pin.thumbnail", "切换缩略图模式", HotkeyScope.Pin, "贴图窗口", "Shift+T",
+            "按 1/4 显示，原始像素不变。默认带 Shift：T 在遮罩与标注里都另有含义，避免一键三义。"),
         new("pin.clickThrough", "切换鼠标穿透", HotkeyScope.Pin, "贴图窗口", "P", "开启后点击直接落到下层窗口。"),
         new("pin.hide", "隐藏这张贴图", HotkeyScope.Pin, "贴图窗口", "H", "也可用 Esc 隐藏。"),
         new("pin.close", "关闭这张贴图", HotkeyScope.Pin, "贴图窗口", "Delete", "关闭后不再恢复（备份同步更新）。"),

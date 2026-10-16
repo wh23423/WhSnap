@@ -135,6 +135,7 @@ public class HotkeyBindingTests
     [Theory]
     [InlineData("capture.region", "F1", HotkeyCatalog.CaptureRegionKeys)]
     [InlineData("capture.pinClipboard", "F3", HotkeyCatalog.PinClipboardKeys)]
+    [InlineData("pin.thumbnail", HotkeyCatalog.LegacyPinThumbnailKeys, "Shift+T")]
     public void Legacy_default_key_is_migrated(string actionId, string legacyKeys, string expected)
     {
         var overrides = new Dictionary<string, string> { [actionId] = legacyKeys };
@@ -233,6 +234,34 @@ public class HotkeyBindingTests
         HotkeySpec.TryParse("Enter", out var enter, out _);
 
         Assert.Null(HotkeyBindings.Match(bindings, enter, HotkeyScope.Overlay));
+    }
+
+    [Fact]
+    public void Thumbnail_no_longer_shares_the_T_key_with_overlay_and_annotation()
+    {
+        // 评审 P0-4：T 曾同时是「进入标注」「文字工具」「切换缩略图」三个不相干的动作。
+        // 贴图窗口与标注是连续流程，按错就会切错工具——默认值必须解开这个三义。
+        Assert.Equal("Shift+T", HotkeyCatalog.Require("pin.thumbnail").DefaultKeys);
+        Assert.Equal("T", HotkeyCatalog.Require("overlay.annotate").DefaultKeys);
+        Assert.Equal("T", HotkeyCatalog.Require("annotation.tool.text").DefaultKeys);
+    }
+
+    [Fact]
+    public void No_default_key_spans_more_than_two_scopes()
+    {
+        var scopesByKey = HotkeyCatalog.All
+            .Where(action => action.DefaultKeys is not null)
+            .GroupBy(action => action.DefaultKeys!.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(action => action.Scope).Distinct().Count(),
+                StringComparer.OrdinalIgnoreCase);
+
+        var triples = scopesByKey.Where(pair => pair.Value > 2).ToList();
+
+        Assert.True(
+            triples.Count == 0,
+            "这些默认键跨了三个以上作用域（一键多义）：" + string.Join("、", triples.Select(pair => $"{pair.Key} → {pair.Value} 个作用域")));
     }
 }
 
@@ -362,5 +391,29 @@ public class HotkeyConflictTests
     public void Summarize_says_clean_when_there_is_nothing_to_report()
     {
         Assert.Equal("未发现冲突。", HotkeyConflictDetector.Summarize([]));
+    }
+
+    [Theory]
+    [InlineData("overlay.confirm", "overlay.cancel", "遮罩内按键")]
+    [InlineData("pin.copy", "pin.saveAs", "贴图窗口内按键")]
+    [InlineData("annotation.undo", "annotation.redo", "标注窗口内按键")]
+    public void Conflict_message_names_the_right_scope(string first, string second, string expectedScope)
+    {
+        // 评审 P2-10：Describe 只映射了 Global / Overlay，其余全落到兜底"贴图窗口内按键"，
+        // 于是标注作用域的内部撞键会被误报成贴图窗口。
+        var bindings = new List<HotkeyBinding>
+        {
+            new(first, "Ctrl+Alt+Shift+F5", true),
+            new(second, "Ctrl+Alt+Shift+F5", true),
+        };
+
+        var reports = HotkeyConflictDetector.DetectInternalDuplicates(bindings);
+
+        Assert.Equal(2, reports.Count);
+
+        foreach (var report in reports)
+        {
+            Assert.Contains(expectedScope, report.Message);
+        }
     }
 }

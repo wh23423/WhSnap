@@ -120,6 +120,7 @@ public static class HotkeyDefaultMigration
     [
         ("capture.region", HotkeyCatalog.LegacyCaptureRegionKeys),
         ("capture.pinClipboard", HotkeyCatalog.LegacyPinClipboardKeys),
+        ("pin.thumbnail", HotkeyCatalog.LegacyPinThumbnailKeys),
     ];
 
     /// <summary>

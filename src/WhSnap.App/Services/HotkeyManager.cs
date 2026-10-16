@@ -145,7 +145,7 @@ internal sealed class HotkeyManager : IDisposable
             results.Add(Record(error == ERROR_HOTKEY_ALREADY_REGISTERED
                 ? new HotkeyRegistrationResult(
                     HotkeyStatus.ConflictWithSystem, definition.Id, spec.ToString(), spec, error,
-                    $"「{definition.DisplayName}」的 {spec} 已被系统或其它程序占用。")
+                    $"「{definition.DisplayName}」的 {spec} 已被系统或其它程序占用{SuspectedOwner(spec)}。")
                 : new HotkeyRegistrationResult(
                     HotkeyStatus.Failed, definition.Id, spec.ToString(), spec, error,
                     $"「{definition.DisplayName}」的 {spec} 注册失败（Win32 错误 {error}）。")));
@@ -214,8 +214,16 @@ internal sealed class HotkeyManager : IDisposable
             spec.ToString(),
             spec,
             error,
-            error == ERROR_HOTKEY_ALREADY_REGISTERED ? "已被占用。" : $"注册失败（Win32 {error}）。");
+            error == ERROR_HOTKEY_ALREADY_REGISTERED ? $"已被占用{SuspectedOwner(spec)}。" : $"注册失败（Win32 {error}）。");
     }
+
+    /// <summary>
+    /// L1 只说得清"这个键现在被占用了"，说不出是谁占的（Windows 没有公开的反查 API）。
+    /// 能补的是 L3 的启发式：命中常见冲突源库时把"最可能占用它的程序"一并写给用户，
+    /// 否则用户只能一个组合一个组合地试（评审 §3 的"唯一缺口"）。
+    /// </summary>
+    private static string SuspectedOwner(HotkeySpec spec) =>
+        KnownConflictSources.TryLookup(spec, out string owner, out _) ? $"（疑似占用者：{owner}）" : string.Empty;
 
     public void UnregisterAll()
     {

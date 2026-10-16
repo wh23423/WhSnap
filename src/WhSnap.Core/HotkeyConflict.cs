@@ -51,6 +51,7 @@ public static class KnownConflictSources
         new("Win+Shift+T", "PowerToys「始终置顶」", "PowerToys 全局注册。"),
         new("F1", "Snipaste / 各类帮助键", "Snipaste 默认截图键；同时装着两个工具时必然冲突。"),
         new("F3", "Snipaste 贴图键", "同上。"),
+        new("Shift+F3", "Snipaste / 部分截图工具的邻近键位", "同时装着截图工具时容易撞键；可在设置里把「显示 / 隐藏全部贴图」改到别的组合。"),
         new("Win+V", "Windows 剪贴板历史", "系统独占，无法注册。"),
         new("Win+.", "Windows 表情符号面板", "系统独占，无法注册。"),
         new("PrtScn+Alt", "部分笔记本的截图/录屏功能键", "取决于厂商驱动，建议实测。"),
@@ -124,7 +125,10 @@ public static class ReservedHotkeys
 
 /// <summary>
 /// 三层冲突检测的纯逻辑部分：
-///   * L2 内部重复——修饰键规范化后比对，跨作用域不算冲突；
+///   * L2 内部重复——修饰键规范化后比对，**同一作用域内**才算冲突；
+///     跨作用域撞键（例如全局 `F3` 与遮罩内 `F3`）不在这里告警，改为在运行期
+///     由 `HotkeyManager.SuspendScopeConflicts` 进遮罩前临时注销撞键的全局热键来让位，
+///     让"局部优先"成为真规则（否则遮罩提示条写的键根本收不到）；
 ///   * L3 常见冲突源——启发式提示（Windows 没有公开反查占用者的 API，见风险 R3）；
 ///   * 保留键——直接劝退。
 /// L1（是否被系统/其它软件占用）必须真去试注册，在 App 层的注册探针里做。
@@ -233,6 +237,8 @@ public static class HotkeyConflictDetector
     {
         HotkeyScope.Global => "全局热键",
         HotkeyScope.Overlay => "遮罩内按键",
-        _ => "贴图窗口内按键",
+        HotkeyScope.Pin => "贴图窗口内按键",
+        HotkeyScope.Annotation => "标注窗口内按键",
+        _ => "未知作用域",
     };
 }
