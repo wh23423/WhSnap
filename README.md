@@ -1,6 +1,8 @@
 # WhSnap
 
-对标 Snipaste 的 Windows 截图 / 贴图工具。当前版本 **`v1.0.0-preview.2`**（功能与发布工程已完成，见文末「里程碑」）。
+对标 Snipaste 的 Windows 截图 / 贴图工具。线上最新发布 **`v1.0.0-preview.2`**（签名版，见文末「里程碑」）；
+源码分支已推进到 **`1.0.0-preview.3`**：体验评审报告的阶段二 / 阶段三收口（键位与提示层）已完成并全量回归通过，
+**但尚未打 tag、未发 Release**。
 
 - 项目规划方案：[docs/whsnap-项目规划方案.md](docs/whsnap-项目规划方案.md)
 - 用户手册：[docs/whsnap-用户手册.md](docs/whsnap-用户手册.md)（安装、热键全表、47 项设置说明、操作与疑难；装完也会出现在应用目录与开始菜单）
@@ -554,6 +556,33 @@ Get-Content "$env:TEMP\whsnap-power-test.txt" -Encoding UTF8
 **不是真的把机器睡下去**；"系统确实会在恢复时广播这条消息"是 Windows 既定行为，真机睡一次再唤醒仍建议人工确认。
 本自检被"故意不重新注册"的变异版本验证过：那种情况下它会报 2 项失败并 `exit 1`——不是永远绿的摆设。
 
+### 体验护栏自检（`--ux-test`）
+
+键盘与提示层的正确性原先没有任何机器断言（`--focal-test` 只管设计一致性，`--overlay-test` 绕过真实键盘事件），
+于是"全局键吃掉遮罩内同名键""改键后提示开始说谎"这类问题能活到用户手里。`--ux-test` 把它们变成 9 组断言：
+
+```powershell
+& src\WhSnap.App\bin\Release\net8.0-windows10.0.22000.0\WhSnap.exe --ux-test
+Get-Content "$env:TEMP\whsnap-ux-test.txt" -Encoding UTF8
+```
+
+| 断言 | 做法 |
+|---|---|
+| 全局默认键真能注册 | 对默认绑定的全局动作逐个真调 `RegisterHotKey`；被别的软件占用的**如实记备注**（不算失败，也不算通过） |
+| 全局按键真能派发 | 投递 `WM_HOTKEY`，断言"热键 id → 动作 id"逐个命中 |
+| 遮罩内按键真能派发 | 合成 640×480 假屏幕 + **真遮罩窗口**，用 `RaiseEvent(PreviewKeyDown)` 走真实 WPF 路由，断言每个动作产生它该有的结果 |
+| 无写死键名 | 把 4 个动作改绑成占位键后，遍历启动气泡 / 引导 Hero / 自启动说明 / 设置说明 / 贴图右键菜单 / 面板空状态 / 标注速查条的**全部文案**，断言跟随新键且不含旧键名 |
+| 无跨作用域抢占 | 默认键位里不得出现"全局键 = 局部键" |
+| 无一键多义 | 同一个键默认绑定的作用域不得超过两个 |
+| 数值一致 | 颜色历史面板写的容量必须等于实际配置容量 |
+| 引导一致 | Hero 与自启动说明必须含当前截图键 |
+| 破坏性动作默认不绑定 | 关闭全部贴图 / 打开面板的默认键必须为空 |
+
+**诚实边界**：① 全局键"被占用"只能证明"现在用不了"，说不出是谁占的（Windows 没有反查 API），
+占用者仍只是 `KnownConflictSources` 的启发式提示；② WPF 的 `Keyboard.Modifiers` 读的是**真实键盘状态**，
+伪造不了 Ctrl/Shift，所以带修饰键的组合退化为直调会话处理并在报告里如实计数（本机 6 条走真实路由、2 条退化）；
+③ 运行期间遮罩窗口会短暂闪现（只为走真实的 WPF 路由与渲染路径）。
+
 ---
 
 ## 分发（自己 + 小圈子）
@@ -686,7 +715,8 @@ src/
                         性能埋点（PerfTrace）
     Tray/               托盘图标与菜单（Focal 自绘 ToolStripRenderer）
     Diagnostics/        无界面自检（selftest / focal-test / focal-shots / overlay-test / pin-test / settings-test /
-                        annotate-test / element-test / update-test / crash-test / power-test / diagnostics-pack / capture-to）
+                        annotate-test / element-test / update-test / crash-test / power-test / ux-test /
+                        diagnostics-pack / capture-to）
 tests/
   WhSnap.Core.Tests/    xUnit
 build/
@@ -737,9 +767,34 @@ CI run `38788044031` **success**，Release 四类资产齐全（安装包 + `upd
 > 现在统一用 **hashtable splat**，请勿改回数组。
 > 完整取证见 [项目进度报告](docs/项目进度报告.md)。
 
-十二个自检命令（`--selftest` / `--focal-test` / `--focal-shots` / `--overlay-test` / `--pin-test` /
+十三个自检命令（`--selftest` / `--focal-test` / `--focal-shots` / `--overlay-test` / `--pin-test` /
 `--settings-test` / `--annotate-test` / `--element-test` / `--update-test` / `--crash-test` / `--power-test` /
-`--diagnostics-pack`）全部 exit 0（另有 `--capture-to` 用于单后端抓屏诊断、`--onboarding-preview` 用于向导目视验收）。
+`--ux-test` / `--diagnostics-pack`）全部 exit 0（另有 `--capture-to` 用于单后端抓屏诊断、`--onboarding-preview` 用于向导目视验收）。
+自检报告合计 **PASS 98 / FAIL 0 / SKIP 0**（selftest 21 · focal 6 · power 8 · settings 12 · update 11 ·
+crash 5 · pin 13 · ux 9 · annotate 8 · element 5），单元测试 **314/314**，手册覆盖率 0 缺失。
+
+### 体验评审收口（`1.0.0-preview.3`，本地已提交、未发 Release）
+
+[体验评审与进度报告](docs/whsnap-体验评审与进度报告.md) 列出的阶段二 / 阶段三全部收口：
+
+- **P0-4 一键三义**：`pin.thumbnail` 默认 `T` → `Shift+T`（含老配置按值迁移）；
+- **P1-6 `Shift` 语义**：实现"`Shift` 拖出正方形 / 抓角等比缩放"，并写进遮罩提示条
+  （原文只写"方向键微调"，没提 `Shift`=10px、`Ctrl`=改大小）；
+- **P1-5 可发现性**：提示条补 `T`/`C` 键帽并改为可折行，取色/标注按钮补键帽，标注左轨字母提高对比度；
+- **P2-9 文案**：统一"截图（区域）/ 复制 / 保存 / 标注 / 确认截图 / 取消截图 / 贴图剪贴板内容"，
+  去掉 `M4`、`L1 试注册`、`per-user`、`auto`、Markdown 反引号等内部术语，
+  颜色历史面板容量改为读实际配置（原先写死"最多保留 12 个"，与设置上限 64 矛盾），
+  引导页"第 1 步，共 3 步"改为"首次运行设置 · 全部可改"；
+- **P2-10 冲突提示**：补 `Annotation` 作用域文案（原先标注内部撞键会被说成"贴图窗口内按键"），
+  被系统占用时附上 `KnownConflictSources` 的**疑似占用者**；
+- **新护栏**：`--ux-test`（9 组断言，见上）+ 12 条新单测。
+
+**顺带修掉一个真缺陷**：`HotkeyPlaceholder` 只认小写动作 id，`{overlay.pickColor}` 这类 camelCase 占位符
+会被原样显示成花括号（正是 `--ux-test` 的文案扫描抓出来的）。
+
+> ⚠️ **本机实测发现（未改默认值）**：`Shift+F3`（显示 / 隐藏全部贴图）在这台机器上**已被占用**
+> （Win32 1409，同时装着 Snipaste，其 `F1`/`F3` 也在占用名单里）；`Ctrl+Shift+A` 与 `Ctrl+Alt+Z` 可用。
+> 冲突时设置页会显示"冲突 + 疑似占用者"，直接从托盘菜单也能显示/隐藏全部贴图。
 
 未在真机验证的两项：真实双屏（尤其混合缩放比）的鼠标捕获跨屏移交、HDR/宽色域下的截图表现。
 （唤醒后热键的影子已在 `--power-test` 里守住，剩下"真睡一觉再唤醒"这一步。）
