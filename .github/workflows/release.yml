@@ -127,6 +127,8 @@ jobs:
             build/installer/install-trust.ps1
             artifacts/signing/*.cer
           generate_release_notes: true
+          # 每个版本发布前请更新这段正文（当前是 preview.3「体验评审收口」的说明）。
+          # GitHub 会把自动生成的提交清单接在正文之后（body + generate_release_notes 同时生效）。
           body: |
             WhSnap ${{ steps.version.outputs.version }}（预览版）
 

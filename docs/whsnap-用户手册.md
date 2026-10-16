@@ -1,6 +1,6 @@
 # WhSnap 用户手册
 
-> 适用版本：**1.0.0-preview.3**（源码分支；线上最新 Release 仍是 `1.0.0-preview.2`）
+> 适用版本：**1.0.0-preview.3**（[签名版已发布](https://github.com/wh23423/WhSnap/releases/latest)）
 > ｜ Windows 11，最低 10.0.22000 ｜ 对标 Snipaste 的 Windows 截图 / 贴图工具
 >
 > 本手册里的名称都取自程序本体：快捷键与「设置 → 快捷键」页的动作名一致，

@@ -103,6 +103,11 @@
 `--update-test` 11 · `--crash-test` 5 · `--power-test` 8 · `--ux-test` 9 · `--annotate-test` 8 · `--element-test` 5，
 **合计 98 PASS / 0 FAIL / 0 SKIP**）；手册覆盖率 **0 缺失**。
 
+**发布**：收口成果已推远端并发布签名版 —— CI run `38897286876` **success**，
+Release [v1.0.0-preview.3](https://github.com/wh23423/WhSnap/releases/tag/v1.0.0-preview.3) 四类资产齐全，
+发布物校验（`artifacts/probe/verify-published-release.ps1`）4 项全 PASS：清单 `Sha256`/`Size`/`Url` 自洽、
+`CN=WhSnap` + DigiCert RFC3161 时间戳、线上安装包 = 线上 `.cer` = 本机 `.pfx`。
+
 ### 诚实边界与新增发现
 
 1. **`--ux-test` 的按键覆盖面**：WPF 的 `Keyboard.Modifiers` 读的是**真实键盘状态**，无法伪造，
@@ -399,7 +404,8 @@
 
 ## 六、本报告的核实边界
 
-> **本轮（19:00）之后的基线**：代码已推进到 `1.0.0-preview.3`（本地提交，未打 tag）。§二 / §三 里的
+> **本轮（19:00）之后的基线**：代码已推进到 `1.0.0-preview.3` 并**已发布签名版**
+> （CI run `38897286876` success，Release 四类资产齐全）。§二 / §三 里的
 > 行号与"现状"仍然描述 `868b9ae` 的**评审时点**，是历史取证；**修复后的实际状态以 §一之二 / §一之三 为准**。
 
 - **代码基线**：`868b9ae`（M7 Focal UI 之后的 HEAD）。所有行号已按该提交核对；

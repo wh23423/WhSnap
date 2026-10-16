@@ -1,8 +1,8 @@
 # WhSnap
 
-对标 Snipaste 的 Windows 截图 / 贴图工具。线上最新发布 **`v1.0.0-preview.2`**（签名版，见文末「里程碑」）；
-源码分支已推进到 **`1.0.0-preview.3`**：体验评审报告的阶段二 / 阶段三收口（键位与提示层）已完成并全量回归通过，
-**但尚未打 tag、未发 Release**。
+对标 Snipaste 的 Windows 截图 / 贴图工具。当前版本 **`v1.0.0-preview.3`**（**签名版已发布**，见
+[Releases](https://github.com/wh23423/WhSnap/releases/latest) 与文末「里程碑」）。
+本版是**体验评审收口**：评审报告的 4 个 P0 与阶段二 / 阶段三全部关闭，并新增 `--ux-test` 体验护栏。
 
 - 项目规划方案：[docs/whsnap-项目规划方案.md](docs/whsnap-项目规划方案.md)
 - 用户手册：[docs/whsnap-用户手册.md](docs/whsnap-用户手册.md)（安装、热键全表、47 项设置说明、操作与疑难；装完也会出现在应用目录与开始菜单）
@@ -587,27 +587,28 @@ Get-Content "$env:TEMP\whsnap-ux-test.txt" -Encoding UTF8
 
 ## 分发（自己 + 小圈子）
 
-发布流程：打标签 → GitHub Actions 自动构建并创建 Release。
+发布流程：打标签 → GitHub Actions 自动构建并创建 Release（`v1.0.0-preview.3` 就是这么发的，run `38897286876`）。
 
 ```powershell
-git tag v1.0.0-preview.2
-git push origin v1.0.0-preview.2
+git tag -a v1.0.0-preview.3 -m "WhSnap 1.0.0-preview.3"
+git push origin v1.0.0-preview.3
 ```
 
 ### 发布清单 `update.json` 与 Release 资产
 
-`build-installer.ps1` 编译完安装包后**顺手生成 `artifacts/installer/update.json`**（自更新清单）：
+`build-installer.ps1` 编译完安装包后**顺手生成 `artifacts/installer/update.json`**（自更新清单）。
+下面是**线上 preview.3 的真实清单**（原样照抄，可用于核对）：
 
 ```jsonc
 {
   "SchemaVersion": 1,
-  "Version": "1.0.0-preview.2",
+  "Version": "1.0.0-preview.3",
   "Channel": "beta",                 // 版本号带横线（预览版）→ beta，否则 stable
-  "Url": "…/WhSnap-1.0.0-preview.2-setup-x64.exe",
-  "Sha256": "…",                     // 取自刚编译出的安装包
-  "Size": 53602712,
-  "PublishedAtUtc": "2026-10-16T02:30:00Z",
-  "Notes": "WhSnap 1.0.0-preview.2",
+  "Url": "https://github.com/wh23423/WhSnap/releases/download/v1.0.0-preview.3/WhSnap-1.0.0-preview.3-setup-x64.exe",
+  "Sha256": "2267b8cae70c68794b1a01bb14592a3621681e309f1985f6b3019b74cb5b43ed",
+  "Size": 53671112,
+  "PublishedAtUtc": "2026-10-16T12:00:02.3257395Z",
+  "Notes": "WhSnap 1.0.0-preview.3",
   "MinimumVersion": ""
 }
 ```
@@ -753,12 +754,15 @@ M5 对标收尾 ✅（`v0.5.0-preview`：元素检测、取色器与颜色历史
 （遮罩浮动工具条与 11×11 放大镜、标注左轨 13 工具、设置导轨 11 分组、贴图管理空状态、托盘自绘菜单、
 首次运行向导），并新增 `--focal-test` / `--focal-shots` 两条设计一致性与视觉回归命令。
 **发布收口 ✅（`v1.0.0-preview.2`）**：签名 Secret 已配、CI 产出**签名版** Release 与四类资产（含 `WhSnap.cer`）。
+**体验评审收口 ✅（`v1.0.0-preview.3`）**：4 个 P0 + 阶段二 / 阶段三全部关闭、新增 `--ux-test`，CI run
+`38897286876` **success**，四类资产齐全。
 
-**当前状态**：功能与发布工程均已完成，**`v1.0.0-preview.2` 已发布（签名版）**。
-CI run `38788044031` **success**，Release 四类资产齐全（安装包 + `update.json` + `install-trust.ps1` + `WhSnap.cer`）；
-签名者 `CN=WhSnap` + DigiCert RFC3161 时间戳，线上安装包与线上 `.cer`、本机 `.pfx` 指纹三者一致。
-用**线上那个安装包**跑过完整验收：`ProductVersion 1.0.0-preview.2+f3a7136`、装机 `--selftest` 20 PASS / 0 FAIL、
-安装 / 覆盖 / 卸载后 0 残留且用户数据保留；`--update-test` 对线上清单全部通过。
+**当前状态**：功能与发布工程均已完成，**`v1.0.0-preview.3` 已发布（签名版）**。
+签名者 `CN=WhSnap` + DigiCert RFC3161 时间戳，**线上安装包 = 线上 `.cer` = 本机 `.pfx`
+（指纹 `BE234569…`）三者一致**；线上 `update.json` 的 `Sha256` / `Size` 与下载回来的安装包逐字一致
+（`artifacts/probe/verify-published-release.ps1` 的 4 项检查全 PASS）。
+`v1.0.0-preview.2` 曾用线上安装包跑过完整安装 / 覆盖 / 卸载验收（`ProductVersion 1.0.0-preview.2+f3a7136`、
+装机 `--selftest` 20 PASS / 0 FAIL、卸载后 0 残留）；preview.3 已做发布物校验，装机验收命令见下。
 （`v1.0.0-preview.1` 是历史上的**未签名**包且缺 `.cer`，已被 preview.2 取代。）
 
 > ⚠️ **改 CI 工作流要当心**：`release.yml` 里曾用数组 splat 给脚本传参
@@ -773,7 +777,7 @@ CI run `38788044031` **success**，Release 四类资产齐全（安装包 + `upd
 自检报告合计 **PASS 98 / FAIL 0 / SKIP 0**（selftest 21 · focal 6 · power 8 · settings 12 · update 11 ·
 crash 5 · pin 13 · ux 9 · annotate 8 · element 5），单元测试 **314/314**，手册覆盖率 0 缺失。
 
-### 体验评审收口（`1.0.0-preview.3`，本地已提交、未发 Release）
+### 体验评审收口（`v1.0.0-preview.3`，已发布签名版）
 
 [体验评审与进度报告](docs/whsnap-体验评审与进度报告.md) 列出的阶段二 / 阶段三全部收口：
 
@@ -798,5 +802,17 @@ crash 5 · pin 13 · ux 9 · annotate 8 · element 5），单元测试 **314/314
 
 未在真机验证的两项：真实双屏（尤其混合缩放比）的鼠标捕获跨屏移交、HDR/宽色域下的截图表现。
 （唤醒后热键的影子已在 `--power-test` 里守住，剩下"真睡一觉再唤醒"这一步。）
+
+发布物校验（不装到机器上，只下载 + 验签名/哈希/清单，4 项全 PASS）：
+
+```powershell
+powershell -File artifacts/probe/verify-published-release.ps1 -Tag v1.0.0-preview.3
+```
+
+装机端到端验收（静默安装 → 验签名/版本/手册/快捷方式 → 装机自检 → 静默卸载 → 证明机器干净）：
+
+```powershell
+powershell -File build\tools\verify-signed-install.ps1 -Version 1.0.0-preview.3
+```
 
 详见 [项目规划方案](docs/whsnap-项目规划方案.md)（§18 为 M6 交付验收记录）。
