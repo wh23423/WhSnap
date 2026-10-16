@@ -929,6 +929,73 @@ internal sealed class PinWindow : IDisposable
         return binding is { IsActive: true } ? binding.Keys!.Trim() : fallback;
     }
 
+    /// <summary>右键菜单的一条：分隔符用 <see cref="MenuCommand"/> == 0 表示。</summary>
+    private sealed record MenuEntry(
+        MenuCommand Command,
+        string Label,
+        string? ActionId = null,
+        string? Fallback = null,
+        Func<PinState, bool>? Checked = null);
+
+    /// <summary>
+    /// 右键菜单的静态结构（顺序、标签、绑定来源、勾选条件）。抽成数据是为了：
+    /// ① 菜单里每一项的快捷键都从绑定算出，不写死；② 自检能直接遍历"菜单上用户看得到的所有文字"。
+    /// </summary>
+    private static readonly MenuEntry[] MenuLayout =
+    [
+        new(MenuCommand.Copy, "复制到剪贴板", "pin.copy", "Ctrl+C"),
+        new(MenuCommand.SaveAs, "另存为…", "pin.saveAs", "Ctrl+S"),
+        new(MenuCommand.Annotate, "贴图内标注", "pin.annotate", "空格"),
+        new((MenuCommand)0, string.Empty),
+        new(MenuCommand.ZoomIn, "放大\t滚轮上"),
+        new(MenuCommand.ZoomOut, "缩小\t滚轮下"),
+        new(MenuCommand.ZoomReset, "恢复 100%", "pin.resetZoom", "0"),
+        new((MenuCommand)0, string.Empty),
+        new(MenuCommand.RotateClockwise, "顺时针旋转 90°", "pin.rotateCw", "1"),
+        new(MenuCommand.RotateCounterClockwise, "逆时针旋转 90°", "pin.rotateCcw", "2"),
+        new(MenuCommand.FlipHorizontal, "水平翻转", "pin.flipH", "3", state => state.FlipHorizontal),
+        new(MenuCommand.FlipVertical, "垂直翻转", "pin.flipV", "4", state => state.FlipVertical),
+        new((MenuCommand)0, string.Empty),
+        new(MenuCommand.Thumbnail, "缩略图模式", "pin.thumbnail", "Shift+T", state => state.Thumbnail),
+        new(MenuCommand.OpacityFull, "不透明度 100%", Checked: state => state.Opacity == 100),
+        new(MenuCommand.Opacity80, "不透明度 80%", Checked: state => state.Opacity == 80),
+        new(MenuCommand.Opacity60, "不透明度 60%", Checked: state => state.Opacity == 60),
+        new(MenuCommand.Opacity40, "不透明度 40%", Checked: state => state.Opacity == 40),
+        new(MenuCommand.Opacity20, "不透明度 20%", Checked: state => state.Opacity == 20),
+        new(MenuCommand.ClickThrough, "鼠标穿透", "pin.clickThrough", "P", state => state.ClickThrough),
+        new((MenuCommand)0, string.Empty),
+        new(MenuCommand.Hide, "隐藏", "pin.hide", "H"),
+        new(MenuCommand.Close, "关闭这张贴图", "pin.close", "Delete"),
+        new((MenuCommand)0, string.Empty),
+        new(MenuCommand.ShowAll, "显示全部贴图"),
+        new(MenuCommand.HideAll, "隐藏全部贴图"),
+        new(MenuCommand.CloseAll, "关闭全部贴图"),
+    ];
+
+    /// <summary>自检用：菜单上全部用户可见文字（含快捷键列）。</summary>
+    internal static IReadOnlyList<string> ComposeMenuLabels(Func<string, string, string> keyText)
+    {
+        var labels = new List<string>();
+
+        foreach (var entry in MenuLayout)
+        {
+            if (entry.Command == 0)
+            {
+                continue;
+            }
+
+            labels.Add(entry.ActionId is null
+                ? entry.Label
+                : $"{entry.Label}\t{keyText(entry.ActionId, entry.Fallback ?? string.Empty)}");
+        }
+
+        return labels;
+    }
+
+    /// <summary>自检用：菜单里"键位取自绑定"的动作 id（顺序与菜单一致）。</summary>
+    internal static IReadOnlyList<string> KeyedMenuActionIds =>
+        MenuLayout.Where(entry => entry.ActionId is not null).Select(entry => entry.ActionId!).ToList();
+
     private void ShowContextMenu()
     {
         IntPtr menu = NativeMethods.CreatePopupMenu();
@@ -939,37 +1006,20 @@ internal sealed class PinWindow : IDisposable
 
         try
         {
-            Append(menu, MenuCommand.Copy, $"复制到剪贴板\t{KeyText("pin.copy", "Ctrl+C")}");
-            Append(menu, MenuCommand.SaveAs, $"另存为…\t{KeyText("pin.saveAs", "Ctrl+S")}");
-            Append(menu, MenuCommand.Annotate, $"贴图内标注\t{KeyText("pin.annotate", "空格")}");
-            Append(menu, 0, null);
+            foreach (var entry in MenuLayout)
+            {
+                if (entry.Command == 0)
+                {
+                    Append(menu, 0, null);
+                    continue;
+                }
 
-            Append(menu, MenuCommand.ZoomIn, "放大\t滚轮上");
-            Append(menu, MenuCommand.ZoomOut, "缩小\t滚轮下");
-            Append(menu, MenuCommand.ZoomReset, $"恢复 100%\t{KeyText("pin.resetZoom", "0")}");
-            Append(menu, 0, null);
+                string label = entry.ActionId is null
+                    ? entry.Label
+                    : $"{entry.Label}\t{KeyText(entry.ActionId, entry.Fallback ?? string.Empty)}";
 
-            Append(menu, MenuCommand.RotateClockwise, $"顺时针旋转 90°\t{KeyText("pin.rotateCw", "1")}");
-            Append(menu, MenuCommand.RotateCounterClockwise, $"逆时针旋转 90°\t{KeyText("pin.rotateCcw", "2")}");
-            Append(menu, MenuCommand.FlipHorizontal, $"水平翻转\t{KeyText("pin.flipH", "3")}", State.FlipHorizontal);
-            Append(menu, MenuCommand.FlipVertical, $"垂直翻转\t{KeyText("pin.flipV", "4")}", State.FlipVertical);
-            Append(menu, 0, null);
-
-            Append(menu, MenuCommand.Thumbnail, $"缩略图模式\t{KeyText("pin.thumbnail", "T")}", State.Thumbnail);
-            Append(menu, MenuCommand.OpacityFull, "不透明度 100%", State.Opacity == 100);
-            Append(menu, MenuCommand.Opacity80, "不透明度 80%", State.Opacity == 80);
-            Append(menu, MenuCommand.Opacity60, "不透明度 60%", State.Opacity == 60);
-            Append(menu, MenuCommand.Opacity40, "不透明度 40%", State.Opacity == 40);
-            Append(menu, MenuCommand.Opacity20, "不透明度 20%", State.Opacity == 20);
-            Append(menu, MenuCommand.ClickThrough, $"鼠标穿透\t{KeyText("pin.clickThrough", "P")}", State.ClickThrough);
-            Append(menu, 0, null);
-
-            Append(menu, MenuCommand.Hide, $"隐藏\t{KeyText("pin.hide", "H")}");
-            Append(menu, MenuCommand.Close, $"关闭这张贴图\t{KeyText("pin.close", "Delete")}");
-            Append(menu, 0, null);
-            Append(menu, MenuCommand.ShowAll, "显示全部贴图");
-            Append(menu, MenuCommand.HideAll, "隐藏全部贴图");
-            Append(menu, MenuCommand.CloseAll, "关闭全部贴图");
+                Append(menu, entry.Command, label, entry.Checked?.Invoke(State) ?? false);
+            }
 
             var cursor = CursorPosition();
             NativeMethods.SetForegroundWindow(_hwnd);

@@ -86,6 +86,15 @@ public partial class App : System.Windows.Application
             return;
         }
 
+        if (e.Args.Any(a => a.Equals("--ux-test", StringComparison.OrdinalIgnoreCase)))
+        {
+            // 体验护栏：按键是否真的通到动作 + 文案是否跟随绑定 + 命名/数值/引导一致性。
+            // 为什么单独一条命令：现有自检里 --focal-test 管设计一致性、其余直调逻辑方法，
+            // 「按键可达性」此前 0 条断言（P0-2/P0-4 正是这样活下来的）。
+            Shutdown(Diagnostics.UxTestCommand.Run());
+            return;
+        }
+
         if (e.Args.Any(a => a.Equals("--annotate-test", StringComparison.OrdinalIgnoreCase)))
         {
             Shutdown(Diagnostics.AnnotationTestCommand.Run());
@@ -223,7 +232,7 @@ public partial class App : System.Windows.Application
         _capture.ColorPicked += _ =>
         {
             PersistColorHistory();
-            _tray?.SyncRecentColors(_colorHistory.Items);
+            _tray?.SyncRecentColors(_colorHistory.Items, _colorHistory.Capacity);
         };
         _capture.AnnotateRequested += (image, rect) => OpenAnnotation(image, rect, (annotated, copyOnly) =>
             _capture?.CompleteConfirmed(annotated, rect, copyOnly ? OverlayConfirmAction.CopyOnly : OverlayConfirmAction.Default));
@@ -260,7 +269,7 @@ public partial class App : System.Windows.Application
         ApplyClipboardWatcher();
 
         UpdateTrayPinState();
-        _tray.SyncRecentColors(_colorHistory.Items);
+        _tray.SyncRecentColors(_colorHistory.Items, _colorHistory.Capacity);
 
         // 性能埋点（规划 §2.2 第 4 项）：冷启动 → 托盘就绪（图标 + 菜单 + 状态已就绪）
         PerfTrace.RecordSinceSessionStart(PerfMetric.ColdStartToTray);
@@ -275,8 +284,7 @@ public partial class App : System.Windows.Application
         }
         else
         {
-            string capture = KeyText("capture.region", "(未绑定)");
-            _tray.ShowBalloon("WhSnap 已启动", $"按 {capture} 开始截图（{KeyText("overlay.confirm", "Enter")} 确认，{KeyText("overlay.pin", "F3")} 直接贴图），或双击托盘图标。");
+            _tray.ShowBalloon("WhSnap 已启动", StartupHintText(KeyText));
         }
 
         // 注册失败的热键必须显式告知，绝不静默失败（§5.7）
@@ -372,6 +380,41 @@ public partial class App : System.Windows.Application
             .FirstOrDefault(b => string.Equals(b.ActionId, actionId, StringComparison.OrdinalIgnoreCase));
 
         return binding is { IsActive: true } ? binding.Keys!.Trim() : fallback;
+    }
+
+    /// <summary>
+    /// 启动气泡文案（自检可直接调用）：动作名取 <see cref="HotkeyCatalog"/>，键位取当前绑定，
+    /// 未绑定的动作不写"按 X"这类会撒谎的指引。
+    /// </summary>
+    internal static string StartupHintText(Func<string, string, string> keyText)
+    {
+        string capture = keyText("capture.region", string.Empty);
+        var parts = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(capture))
+        {
+            parts.Add($"按 {capture} 开始截图");
+        }
+        else
+        {
+            parts.Add($"从托盘菜单选「{HotkeyCatalog.Require("capture.region").DisplayName}」开始截图");
+        }
+
+        string confirm = keyText("overlay.confirm", string.Empty);
+        string pin = keyText("overlay.pin", string.Empty);
+        var inside = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(confirm))
+        {
+            inside.Add($"{confirm} {HotkeyCatalog.Require("overlay.confirm").DisplayName}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(pin))
+        {
+            inside.Add($"{pin} {HotkeyCatalog.Require("overlay.pin").DisplayName}");
+        }
+
+        return parts[0] + (inside.Count > 0 ? $"（{string.Join("，", inside)}）" : string.Empty) + "，或双击托盘图标。";
     }
 
     /// <summary>按当前配置重新注册全部全局热键，并把最新绑定推给遮罩/贴图窗口。</summary>
@@ -1007,7 +1050,7 @@ public partial class App : System.Windows.Application
 
         _colorHistory.Add(color);
         PersistColorHistory();
-        _tray?.SyncRecentColors(_colorHistory.Items);
+        _tray?.SyncRecentColors(_colorHistory.Items, _colorHistory.Capacity);
 
         if (ClipboardService.TrySetText(text, out string error))
         {

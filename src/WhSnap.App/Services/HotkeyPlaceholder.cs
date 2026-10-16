@@ -66,9 +66,12 @@ internal static class HotkeyPlaceholder
             return false;
         }
 
+        // 动作 id 是 camelCase（overlay.pickColor / pin.showPanel / annotation.tool.text），
+        // 所以大小写字母都要放行——只放小写会让这些占位符原样显示成 "{overlay.pickColor}"。
+        // 仍然要求"带点"，这样文件名模板里的 {date} {w} {h} 之类不会被误替换。
         foreach (char ch in candidate)
         {
-            if (!char.IsAsciiLetterLower(ch) && ch != '.' && ch != '-')
+            if (!char.IsAsciiLetter(ch) && ch != '.' && ch != '-')
             {
                 return false;
             }
