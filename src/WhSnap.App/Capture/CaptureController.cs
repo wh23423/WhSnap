@@ -31,6 +31,12 @@ internal sealed class CaptureController(SettingsService settings)
     /// <summary>遮罩内的按键绑定（来自设置，改键后宿主会更新）。</summary>
     public IReadOnlyList<HotkeyBinding> KeyBindings { get; set; } = HotkeyBindings.Resolve(scope: HotkeyScope.Overlay);
 
+    /// <summary>
+    /// 全局热键管理器；有值时会在遮罩期间**临时注销与遮罩内按键撞键的全局热键**。
+    /// 不注入也能工作，但那样全局键会抢走遮罩内的同名按键（例如全局 F3 让遮罩内的 F3 失效）。
+    /// </summary>
+    public HotkeyManager? Hotkeys { get; set; }
+
     public bool IsBusy => _overlay is not null;
 
     /// <summary>开始一次截图会话；<paramref name="colorPickMode"/> 为 true 时只做取色（托盘「取色器」）。</summary>
@@ -74,26 +80,32 @@ internal sealed class CaptureController(SettingsService settings)
             session.Confirmed += (image, rect, action) =>
             {
                 _overlay = null;
+                Hotkeys?.ResumeSuspended();
                 HandleConfirmed(image, rect, action);
             };
 
             session.Cancelled += () =>
             {
                 _overlay = null;
+                Hotkeys?.ResumeSuspended();
                 Log.Info("截图已取消。");
             };
 
             session.AnnotateRequested += (image, rect) =>
             {
                 _overlay = null;
+                // 保持挂起直到标注结束：标注窗口自己也有一层按键，全局键此时不该抢。
                 AnnotateRequested?.Invoke(image, rect);
             };
 
+            // 遮罩即将出现：让出与遮罩内按键撞键的全局热键，否则系统级注册会吞掉这些按键。
+            Hotkeys?.SuspendScopeConflicts(HotkeyScope.Overlay);
             session.Show();
         }
         catch (Exception ex)
         {
             _overlay = null;
+            Hotkeys?.ResumeSuspended();
             Log.Error("截图失败", ex);
             StatusReported?.Invoke($"截图失败：{ex.Message}", true);
         }
@@ -103,8 +115,12 @@ internal sealed class CaptureController(SettingsService settings)
     /// 走完"确认后动作"（复制 / 保存 / 贴图）。标注编辑器确认后由宿主调用它，
     /// 这样"标注后确认"和"直接确认"永远是同一套行为。
     /// </summary>
-    public void CompleteConfirmed(BitmapSource image, PhysicalRect rect, OverlayConfirmAction action = OverlayConfirmAction.Default) =>
+    public void CompleteConfirmed(BitmapSource image, PhysicalRect rect, OverlayConfirmAction action = OverlayConfirmAction.Default)
+    {
+        // 标注流程在这里收尾：恢复遮罩期间让位的全局热键（幂等，直接确认时早已恢复）。
+        Hotkeys?.ResumeSuspended();
         HandleConfirmed(image, rect, action);
+    }
 
     private void HandleConfirmed(BitmapSource image, PhysicalRect rect, OverlayConfirmAction action)
     {

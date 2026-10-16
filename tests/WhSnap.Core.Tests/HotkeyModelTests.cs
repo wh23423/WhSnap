@@ -75,7 +75,9 @@ public class HotkeyBindingTests
         Assert.All(bindings, binding => Assert.True(binding.Enabled));
 
         var capture = bindings.Single(binding => binding.ActionId == "capture.region");
-        Assert.Equal("F1", capture.Keys);
+        // 断言"解析结果等于动作表默认值"，而不是把某个具体键写死在这里——
+        // 默认键会随产品决策调整（F1 曾占用了系统帮助键），测试不该因此变红。
+        Assert.Equal(HotkeyCatalog.CaptureRegionKeys, capture.Keys);
         Assert.True(capture.IsActive);
     }
 
@@ -109,6 +111,79 @@ public class HotkeyBindingTests
 
         Assert.True(binding.IsBound);
         Assert.False(binding.IsActive);
+    }
+
+    [Fact]
+    public void Default_keys_do_not_squat_on_system_wide_single_function_keys()
+    {
+        // F1 是 Windows 事实上的帮助键、F3 是浏览器/编辑器的"查找下一个"。全局注册会独占它们，
+        // 让前台程序再也收不到——所以默认值必须是带修饰键的组合。
+        // 这条断言是"别再改回 F1/F3"的护栏。
+        foreach (string actionId in new[] { "capture.region", "capture.pinClipboard" })
+        {
+            var definition = HotkeyCatalog.Require(actionId);
+            Assert.False(string.IsNullOrWhiteSpace(definition.DefaultKeys));
+
+            Assert.True(
+                HotkeySpec.TryParse(definition.DefaultKeys, out var spec, out _),
+                $"{actionId} 的默认键「{definition.DefaultKeys}」无法解析。");
+
+            Assert.NotEqual(0u, spec.Modifiers);
+        }
+    }
+
+    [Theory]
+    [InlineData("capture.region", "F1", HotkeyCatalog.CaptureRegionKeys)]
+    [InlineData("capture.pinClipboard", "F3", HotkeyCatalog.PinClipboardKeys)]
+    public void Legacy_default_key_is_migrated(string actionId, string legacyKeys, string expected)
+    {
+        var overrides = new Dictionary<string, string> { [actionId] = legacyKeys };
+
+        var migrated = HotkeyDefaultMigration.ApplyLegacyDefaults(overrides);
+
+        Assert.Equal(expected, overrides[actionId]);
+        Assert.Contains(actionId, migrated);
+    }
+
+    [Fact]
+    public void Legacy_migration_does_not_touch_user_customized_keys()
+    {
+        var overrides = new Dictionary<string, string>
+        {
+            ["capture.region"] = "Ctrl+Alt+Q",      // 用户自己改的
+            ["capture.pinClipboard"] = "Ctrl+Alt+P", // 用户自己改的
+        };
+
+        var migrated = HotkeyDefaultMigration.ApplyLegacyDefaults(overrides);
+
+        Assert.Empty(migrated);
+        Assert.Equal("Ctrl+Alt+Q", overrides["capture.region"]);
+        Assert.Equal("Ctrl+Alt+P", overrides["capture.pinClipboard"]);
+    }
+
+    [Fact]
+    public void Legacy_migration_is_idempotent()
+    {
+        // 用"显式写了旧默认值"的配置（老用户存档的真实形态）。
+        var overrides = new Dictionary<string, string>
+        {
+            ["capture.region"] = HotkeyCatalog.LegacyCaptureRegionKeys,
+        };
+
+        Assert.NotEmpty(HotkeyDefaultMigration.ApplyLegacyDefaults(overrides));
+        // 第二次不得再迁移（此时值已是新默认键，不等于旧键）。
+        Assert.Empty(HotkeyDefaultMigration.ApplyLegacyDefaults(overrides));
+    }
+
+    [Fact]
+    public void Legacy_migration_does_nothing_when_no_override_exists()
+    {
+        // 没有显式配置的动作本来就拿动作表的默认值（已是新键），不该被迁移，
+        // 也不该在配置里凭空造出一条 overrides。
+        var overrides = new Dictionary<string, string>();
+
+        Assert.Empty(HotkeyDefaultMigration.ApplyLegacyDefaults(overrides));
+        Assert.Empty(overrides);
     }
 
     [Fact]

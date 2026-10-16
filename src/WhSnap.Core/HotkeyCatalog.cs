@@ -29,12 +29,31 @@ public sealed record HotkeyActionDefinition(
 /// </summary>
 public static class HotkeyCatalog
 {
+    /// <summary>
+    /// 旧版本的"区域截图"默认键。F1 是 Windows 事实上的帮助键，全局注册后会让前台程序
+    /// 再也收不到 F1（帮助打不开），且单功能键最容易误触，因此改默认为带修饰键的组合。
+    /// 迁移用它来识别"还在用旧默认值"的配置（见 SettingsService.Migrate）。
+    /// </summary>
+    public const string LegacyCaptureRegionKeys = "F1";
+
+    /// <summary>
+    /// 旧版本的"贴图剪贴板内容"默认键。F3 在浏览器/编辑器里是"查找下一个"，
+    /// 全局吃掉它同样会干扰前台程序。
+    /// </summary>
+    public const string LegacyPinClipboardKeys = "F3";
+
+    /// <summary>当前"区域截图"默认键。</summary>
+    public const string CaptureRegionKeys = "Ctrl+Shift+A";
+
+    /// <summary>当前"贴图剪贴板内容"默认键。</summary>
+    public const string PinClipboardKeys = "Ctrl+Alt+Z";
+
     public static IReadOnlyList<HotkeyActionDefinition> All { get; } =
     [
         // ---- 全局热键 ----
-        new("capture.region", "截图（区域）", HotkeyScope.Global, "截图", "F1",
-            "唤起遮罩框选截图。这是最常用的键，建议保留在容易按到的位置。"),
-        new("capture.pinClipboard", "贴图剪贴板内容", HotkeyScope.Global, "贴图", "F3",
+        new("capture.region", "截图（区域）", HotkeyScope.Global, "截图", CaptureRegionKeys,
+            "唤起遮罩框选截图。默认带修饰键，避免占用 F1 这类被前台程序当作帮助/查找的键。"),
+        new("capture.pinClipboard", "贴图剪贴板内容", HotkeyScope.Global, "贴图", PinClipboardKeys,
             "把剪贴板里的图像/文件/文本/颜色值直接贴到屏幕上。"),
         new("pin.toggleAll", "显示 / 隐藏全部贴图", HotkeyScope.Global, "贴图", "Shift+F3",
             "一键把所有贴图收起来或放回来（不关闭，随时恢复）。"),

@@ -232,6 +232,122 @@ internal sealed class HotkeyManager : IDisposable
         _idToAction.Clear();
     }
 
+    /// <summary>被 <see cref="SuspendScopeConflicts"/> 临时注销的热键（用于原样恢复）。</summary>
+    private sealed record SuspendedHotkey(int Id, string ActionId, HotkeySpec Spec, int Win32Error);
+
+    private readonly List<SuspendedHotkey> _suspended = [];
+
+    internal int SuspendedCount => _suspended.Count;
+
+    /// <summary>
+    /// 临时注销"与其他作用域的按键撞键"的全局热键，返回注销数量。
+    ///
+    /// 为什么需要它：`RegisterHotKey` 是**系统级独占**。当全局 `F3` 与遮罩内 `F3` 同时存在时，
+    /// 用户按下 F3 会被系统投递成 `WM_HOTKEY` 走全局动作，遮罩窗口**根本收不到按键**
+    /// （跨作用域撞键不参与冲突检测，所以这类冲突不会被告警）。
+    /// 进入遮罩前调用它，遮罩内的按键才会真正落到遮罩上；退出后调 <see cref="ResumeSuspended"/>。
+    /// </summary>
+    public int SuspendScopeConflicts(HotkeyScope targetScope)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (_source is null || _suspended.Count > 0)
+        {
+            return 0;
+        }
+
+        // 目标作用域里真正会派发的键位（启用了、绑定了、可解析）。
+        var targetSpecs = new List<HotkeySpec>();
+
+        foreach (var binding in _bindings)
+        {
+            if (binding.Definition.Scope == targetScope && binding.IsActive && binding.TryGetSpec(out var spec))
+            {
+                targetSpecs.Add(spec);
+            }
+        }
+
+        if (targetSpecs.Count == 0)
+        {
+            return 0;
+        }
+
+        foreach (var (id, actionId) in _idToAction.ToList())
+        {
+            var binding = _bindings.FirstOrDefault(b => b.ActionId.Equals(actionId, StringComparison.OrdinalIgnoreCase));
+
+            if (binding is null || !binding.TryGetSpec(out var spec) || !targetSpecs.Contains(spec))
+            {
+                continue;
+            }
+
+            if (NativeMethods.UnregisterHotKey(_source.Handle, id))
+            {
+                _suspended.Add(new SuspendedHotkey(id, actionId, spec, 0));
+            }
+            else
+            {
+                _suspended.Add(new SuspendedHotkey(id, actionId, spec, Marshal.GetLastWin32Error()));
+            }
+
+            _idToAction.Remove(id);
+        }
+
+        if (_suspended.Count > 0)
+        {
+            foreach (var item in _suspended)
+            {
+                _results[item.ActionId] = new HotkeyRegistrationResult(
+                    HotkeyStatus.Registered, item.ActionId, item.Spec.ToString(), item.Spec, 0,
+                    $"「{HotkeyCatalog.Require(item.ActionId).DisplayName}」在 {targetScope} 期间临时让位给窗口内按键。");
+            }
+
+            Log.Info($"进入 {targetScope}：临时注销 {_suspended.Count} 个与之撞键的全局热键（{string.Join("、", _suspended.Select(s => s.ActionId))}）。");
+        }
+
+        return _suspended.Count;
+    }
+
+    /// <summary>恢复被 <see cref="SuspendScopeConflicts"/> 临时注销的热键（幂等）。</summary>
+    public int ResumeSuspended()
+    {
+        if (_disposed || _source is null || _suspended.Count == 0)
+        {
+            return 0;
+        }
+
+        int restored = 0;
+
+        foreach (var item in _suspended)
+        {
+            if (NativeMethods.RegisterHotKey(_source.Handle, item.Id, item.Spec.RegisterModifiers, item.Spec.VirtualKey))
+            {
+                _idToAction[item.Id] = item.ActionId;
+                restored++;
+            }
+            else
+            {
+                int error = Marshal.GetLastWin32Error();
+                Log.Warn($"恢复全局热键「{item.ActionId}」失败（Win32 {error}）——可能已被其它程序占用，请在设置里检查。");
+                _results[item.ActionId] = new HotkeyRegistrationResult(
+                    error == ERROR_HOTKEY_ALREADY_REGISTERED ? HotkeyStatus.ConflictWithSystem : HotkeyStatus.Failed,
+                    item.ActionId, item.Spec.ToString(), item.Spec, error,
+                    error == ERROR_HOTKEY_ALREADY_REGISTERED
+                        ? $"「{HotkeyCatalog.Require(item.ActionId).DisplayName}」的 {item.Spec} 在遮罩期间被其它程序占用。"
+                        : $"「{HotkeyCatalog.Require(item.ActionId).DisplayName}」恢复注册失败（Win32 {error}）。");
+            }
+        }
+
+        _suspended.Clear();
+
+        if (restored > 0)
+        {
+            Log.Info($"退出目标作用域：已恢复 {restored} 个临时让位的全局热键。");
+        }
+
+        return restored;
+    }
+
     private HotkeyRegistrationResult Record(HotkeyRegistrationResult result)
     {
         _results[result.ActionId] = result;
@@ -310,6 +426,7 @@ internal sealed class HotkeyManager : IDisposable
 
         _disposed = true;
         UnregisterAll();
+        _suspended.Clear();
 
         if (_source is not null)
         {

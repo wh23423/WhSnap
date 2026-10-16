@@ -217,6 +217,7 @@ public partial class App : System.Windows.Application
         {
             KeyBindings = _settings.ResolveHotkeys(),
             ColorHistory = _colorHistory,
+            Hotkeys = _hotkeys,
         };
         _capture.StatusReported += OnStatusReported;
         _capture.ColorPicked += _ =>

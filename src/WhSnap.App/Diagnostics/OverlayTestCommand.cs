@@ -209,7 +209,17 @@ internal static class OverlayTestCommand
 
         log.AppendLine($"合成双屏（1280x1024@100% + 1920x1024@150%）：窗口 2 个，跨屏选区 {selection}，双屏渲染与放大镜换算均无异常");
 
-        // 顺带验证"确认动作直达"的键位映射：F3 = 只贴图
+        // 顺带验证"确认动作直达"的键位映射：按**配置里当前的**「直接贴图」键按下应只贴图。
+        // 这里必须读绑定而不是写死 F3 —— 写死会让改键之后自检失真。
+        var pinKeys = HotkeyBindings
+            .Resolve(settings.Hotkeys, settings.DisabledHotkeys, HotkeyScope.Overlay)
+            .First(b => b.ActionId == "overlay.pin")
+            .Keys;
+        if (!KeySpecFactory.TryToWpf(pinKeys, out var pinKey, out var pinModifiers))
+        {
+            throw new InvalidOperationException($"无法解析「直接贴图」的绑定键「{pinKeys}」。");
+        }
+
         OverlayConfirmAction action = OverlayConfirmAction.Default;
         bool confirmed = false;
         session.Confirmed += (image, rect, kind) =>
@@ -222,14 +232,14 @@ internal static class OverlayTestCommand
             }
         };
 
-        if (!session.HandleKey(Key.F3, ModifierKeys.None))
+        if (!session.HandleKey(pinKey, pinModifiers))
         {
-            throw new InvalidOperationException("F3 未被遮罩会话识别。");
+            throw new InvalidOperationException($"「直接贴图」的键 {pinKeys} 未被遮罩会话识别。");
         }
 
         if (!confirmed || action != OverlayConfirmAction.PinOnly)
         {
-            throw new InvalidOperationException($"F3 未映射到「只贴图」：confirmed={confirmed}, action={action}。");
+            throw new InvalidOperationException($"{pinKeys} 未映射到「只贴图」：confirmed={confirmed}, action={action}。");
         }
 
         if (!session.HandleKey(Key.C, ModifierKeys.Control))
@@ -237,7 +247,7 @@ internal static class OverlayTestCommand
             throw new InvalidOperationException("Ctrl+C 未被遮罩会话识别。");
         }
 
-        log.AppendLine("确认动作直达键位：F3 → 只贴图（已验证），Ctrl+C → 只复制（已识别，会话已结束不再重复确认）");
+        log.AppendLine($"确认动作直达键位：{pinKeys} → 只贴图（已验证），Ctrl+C → 只复制（已识别，会话已结束不再重复确认）");
 
         // T → 进入标注：应当把选区交给宿主并关闭遮罩，但**既不算确认、也不算取消**
         var annotateSession = new OverlaySession(frame, right, settings);

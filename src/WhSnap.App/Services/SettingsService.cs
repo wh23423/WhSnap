@@ -10,7 +10,7 @@ namespace WhSnap.Services;
 /// </summary>
 internal sealed class AppSettings
 {
-    public const int CurrentSchemaVersion = 5;
+    public const int CurrentSchemaVersion = 6;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
 
@@ -217,9 +217,24 @@ internal sealed class SettingsService
             Current.DisabledHotkeys ??= [];
 
             // schema 迁移：新增项全部带默认值，老配置只需补"语义发生变化"的部分。
-            if (Current.SchemaVersion < AppSettings.CurrentSchemaVersion)
+            bool changed = Current.SchemaVersion < AppSettings.CurrentSchemaVersion;
+
+            if (changed)
             {
                 Migrate(Current, Current.SchemaVersion);
+            }
+
+            // 默认键迁移按"值"而不是"版本"判定：只有当配置里确实还留着旧默认键时才动手。
+            // 这样即使 schema 版本已被别的动作提前推到最新，老用户也不会被漏掉；已迁移过则不再重复处理。
+            if (ApplyLegacyKeyMigrations(Current))
+            {
+                changed = true;
+            }
+
+            // 版本号只在真发生过迁移时推进；已有 v6 配置里留着的旧默认键，
+            // 由上面的"按值迁移"兜住（两条路径都不会漏）。
+            if (changed)
+            {
                 Current.SchemaVersion = AppSettings.CurrentSchemaVersion;
                 Save();
             }
@@ -246,7 +261,23 @@ internal sealed class SettingsService
             Log.Info($"配置迁移：旧热键 {settings.Hotkey} → 动作 capture.region。");
         }
 
+        // v5 → v6 的默认键迁移不写在这里：它按"配置里是否还留着旧键"判定，而不是按版本号，
+        // 因此由 Load 统一驱动（见 ReportLegacyKeyMigrations），避免版本号被提前推进时被漏掉。
+
         Log.Info($"配置 schema {fromVersion} → {AppSettings.CurrentSchemaVersion}：新增项使用默认值。");
+    }
+
+    /// <summary>执行并记录默认键迁移（幂等，可重复调用）；返回是否发生了迁移。</summary>
+    private static bool ApplyLegacyKeyMigrations(AppSettings settings)
+    {
+        var migrated = HotkeyDefaultMigration.ApplyLegacyDefaults(settings.Hotkeys);
+
+        foreach (string actionId in migrated)
+        {
+            Log.Info($"配置迁移：{actionId} 旧默认键已更新为「{HotkeyCatalog.Require(actionId).DefaultKeys}」（可在设置里改回）。");
+        }
+
+        return migrated.Count > 0;
     }
 
     public void Save()

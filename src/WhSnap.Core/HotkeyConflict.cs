@@ -36,7 +36,7 @@ public static class KnownConflictSources
     private static readonly Entry[] Entries =
     [
         new("Win+Shift+S", "Windows 系统截图", "系统级注册，第三方无法抢占；请改用别的组合。"),
-        new("PrtScn", "系统截图工具（Win11 可在「设置 → 辅助功能 → 键盘」里开启）", "关掉该开关，或换用 F1 之类的自定义键。"),
+        new("PrtScn", "系统截图工具（Win11 可在「设置 → 辅助功能 → 键盘」里开启）", "关掉该开关，或换用带修饰键的组合（如 Ctrl+Shift+A）。"),
         new("Win+PrtScn", "系统截图并自动存盘", "系统独占，建议避开。"),
         new("Win+G", "Xbox Game Bar", "可在「设置 → 游戏 → Xbox Game Bar」关闭；否则请避开。"),
         new("Win+Alt+PrtScn", "Xbox Game Bar 录屏", "同上。"),

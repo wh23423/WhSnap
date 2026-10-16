@@ -142,6 +142,89 @@ internal static class SelfTestRunner
             return $"注册 1 个 + 冲突 1 个（Win32 {conflict.Win32Error}）+ 未绑定/停用各 1 个；L1 探针正确识别被占用与空闲键";
         });
 
+        Check("遮罩期间让位：与遮罩内撞键的全局热键被真正释放，退出后恢复", () =>
+        {
+            var all = HotkeyBindings.Resolve();
+
+            // ① 默认配置必须【没有】全局 ↔ 遮罩撞键：否则系统级注册会吞掉按键，
+            //    遮罩提示条上写的那个键实际上收不到（这正是 F1/F3 时代的老问题）。
+            var collisionsInDefaults = new List<string>();
+
+            foreach (var global in all.Where(b => b.Definition.Scope == HotkeyScope.Global && b.IsActive))
+            {
+                if (!global.TryGetSpec(out var globalSpec))
+                {
+                    continue;
+                }
+
+                foreach (var overlay in all.Where(b => b.Definition.Scope == HotkeyScope.Overlay && b.IsActive))
+                {
+                    if (overlay.TryGetSpec(out var overlaySpec) && overlaySpec.Equals(globalSpec))
+                    {
+                        collisionsInDefaults.Add($"{global.ActionId}({global.Keys}) ↔ {overlay.ActionId}");
+                    }
+                }
+            }
+
+            if (collisionsInDefaults.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    "默认键位里存在「全局 ↔ 遮罩」撞键，遮罩内的同名按键会被系统级注册吞掉："
+                    + string.Join("；", collisionsInDefaults));
+            }
+
+            // ② 用构造出来的撞键验证让位机制本身（默认已不撞，但不能保证用户改键后不撞）。
+            const string contested = "Ctrl+Alt+Shift+F9";
+            HotkeySpec.TryParse(contested, out var contestedSpec, out _);
+
+            var bindings = new List<HotkeyBinding>
+            {
+                new("capture.region", contested, true),    // 全局
+                new("overlay.pin", contested, true),       // 遮罩内，故意撞键
+            };
+
+            using var manager = new HotkeyManager();
+            manager.ApplyAll(bindings);
+
+            var suspended = manager.SuspendScopeConflicts(HotkeyScope.Overlay);
+            if (suspended != 1)
+            {
+                throw new InvalidOperationException($"应让位 1 个全局热键，实际 {suspended} 个。");
+            }
+
+            // 关键证据：此刻用"另一个实例"去注册同一个键必须成功（成功 = 前者真的释放了）。
+            using (var intruder = new HotkeyManager())
+            {
+                var stolen = intruder.ProbeOne("capture.region", "让位验证", contestedSpec);
+
+                if (stolen.Status != HotkeyStatus.Registered)
+                {
+                    throw new InvalidOperationException(
+                        $"进入遮罩后 {contested} 仍被占用（{stolen.Message}）——让位失败，遮罩内的同名按键收不到。");
+                }
+            }
+
+            var restored = manager.ResumeSuspended();
+            if (restored != 1)
+            {
+                throw new InvalidOperationException($"应恢复 1 个全局热键，实际 {restored} 个。");
+            }
+
+            // 恢复后必须重新占住：再探测一次，这次必须拿不到。
+            using (var competitor = new HotkeyManager())
+            {
+                var probe = competitor.ProbeOne("capture.region", "恢复验证", contestedSpec);
+
+                if (probe.Status == HotkeyStatus.Registered)
+                {
+                    throw new InvalidOperationException($"退出遮罩后 {contested} 没有被重新占住——恢复失败，全局热键会静默失效。");
+                }
+            }
+
+            manager.UnregisterAll();
+            return $"默认键位无「全局 ↔ 遮罩」撞键；构造撞键 {contested} 后让位 1 个、恢复 1 个，释放与恢复均经第二实例抢占验证";
+        });
+
         Check("快捷键动作表与配置面完整性（动作表 ↔ 设置 schema ↔ AppSettings）", () =>
         {
             var problems = new List<string>();

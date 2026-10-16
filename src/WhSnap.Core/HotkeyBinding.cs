@@ -104,3 +104,61 @@ public static class HotkeyBindings
     public static IReadOnlyList<string> ToDisabled(IEnumerable<HotkeyBinding> bindings) =>
         bindings.Where(binding => !binding.Enabled).Select(binding => binding.ActionId).Distinct().ToList();
 }
+
+/// <summary>
+/// 默认键位的历史迁移：把"仍在用旧默认值"的用户配置搬到新默认值。
+///
+/// 为什么需要它：用户配置里一旦出现某个动作的键位，它就覆盖动作表的默认值——
+/// 所以**单纯改动作表的默认键不会影响任何老用户**。改默认键时必须配套一次迁移，
+/// 否则老用户永远停在旧键上（这也是"改了默认值却发现没生效"的常见原因）。
+///
+/// 只在"缺失"或"恰好等于旧默认值"时迁移：**用户显式改过的一律不动**。
+/// </summary>
+public static class HotkeyDefaultMigration
+{
+    private static readonly (string ActionId, string LegacyKeys)[] LegacyKeysByAction =
+    [
+        ("capture.region", HotkeyCatalog.LegacyCaptureRegionKeys),
+        ("capture.pinClipboard", HotkeyCatalog.LegacyPinClipboardKeys),
+    ];
+
+    /// <summary>
+    /// 就地迁移 <paramref name="overrides"/>；返回实际迁移的动作 id（已迁移的动作会显式写入新键，
+    /// 语义更清晰，也不会被未来的默认值变更再次牵动）。
+    /// </summary>
+    public static IReadOnlyList<string> ApplyLegacyDefaults(IDictionary<string, string> overrides)
+    {
+        ArgumentNullException.ThrowIfNull(overrides);
+
+        var migrated = new List<string>();
+
+        foreach (var (actionId, legacyKeys) in LegacyKeysByAction)
+        {
+            var definition = HotkeyCatalog.Find(actionId);
+
+            if (definition is null)
+            {
+                continue;
+            }
+
+            if (overrides.TryGetValue(actionId, out string? stored))
+            {
+                // 有显式配置：只有"恰好还在用旧默认键"才迁移，用户改过的不动。
+                if (!string.Equals(stored?.Trim(), legacyKeys, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+            }
+            else if (!string.Equals(definition.DefaultKeys, legacyKeys, StringComparison.OrdinalIgnoreCase))
+            {
+                // 没有显式配置，但动作表默认值已经不是旧键 → 用户本来就拿的是新默认值。
+                continue;
+            }
+
+            overrides[actionId] = definition.DefaultKeys!;
+            migrated.Add(actionId);
+        }
+
+        return migrated;
+    }
+}

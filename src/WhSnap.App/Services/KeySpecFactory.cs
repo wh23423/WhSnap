@@ -74,5 +74,75 @@ internal static class KeySpecFactory
         return new HotkeySpec(bits, (uint)virtualKey);
     }
 
+    private static Dictionary<uint, Key>? _virtualKeyToWpf;
+
+    /// <summary>
+    /// 反向转换：把配置里的键位文本（如 <c>"Ctrl+C"</c>）还原成 WPF 的按键与修饰键。
+    /// 自检需要"按配置里的键"而不是写死某个默认键——写死会让改键后自检失真。
+    /// </summary>
+    public static bool TryToWpf(string? keys, out Key key, out ModifierKeys modifiers)
+    {
+        key = Key.None;
+        modifiers = ModifierKeys.None;
+
+        if (string.IsNullOrWhiteSpace(keys) || !HotkeySpec.TryParse(keys, out var spec, out _))
+        {
+            return false;
+        }
+
+        _virtualKeyToWpf ??= BuildVirtualKeyMap();
+
+        if (!_virtualKeyToWpf.TryGetValue(spec.VirtualKey, out var wpfKey))
+        {
+            return false;
+        }
+
+        if ((spec.Modifiers & HotkeySpec.ModControl) != 0)
+        {
+            modifiers |= ModifierKeys.Control;
+        }
+
+        if ((spec.Modifiers & HotkeySpec.ModShift) != 0)
+        {
+            modifiers |= ModifierKeys.Shift;
+        }
+
+        if ((spec.Modifiers & HotkeySpec.ModAlt) != 0)
+        {
+            modifiers |= ModifierKeys.Alt;
+        }
+
+        if ((spec.Modifiers & HotkeySpec.ModWin) != 0)
+        {
+            modifiers |= ModifierKeys.Windows;
+        }
+
+        key = wpfKey;
+        return true;
+    }
+
+    /// <summary>枚举 <see cref="Key"/> 建立 VK → Key 的反查表（取第一个映射，保证稳定）。</summary>
+    private static Dictionary<uint, Key> BuildVirtualKeyMap()
+    {
+        var map = new Dictionary<uint, Key>();
+
+        foreach (Key candidate in Enum.GetValues<Key>())
+        {
+            if (candidate == Key.None)
+            {
+                continue;
+            }
+
+            int vk = KeyInterop.VirtualKeyFromKey(candidate);
+
+            if (vk > 0)
+            {
+                map.TryAdd((uint)vk, candidate);
+            }
+        }
+
+        return map;
+    }
+
     private static bool IsDown(int virtualKey) => (NativeMethods.GetKeyState(virtualKey) & 0x8000) != 0;
 }
