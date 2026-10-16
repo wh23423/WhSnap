@@ -99,6 +99,44 @@ internal static class SettingsTestCommand
                 return;
             });
 
+            Check("说明文案里的键位跟随当前绑定（改键后不再显示旧键名）", () =>
+            {
+                // 键位可改，所以"等价于在遮罩里按 F3"这类文案必须读绑定；写死就会在改键后说谎。
+                const string marker = "Ctrl+Alt+Shift+F8";
+                var original = new Dictionary<string, string>(settings.Current.Hotkeys);
+                var originalDisabled = new List<string>(settings.Current.DisabledHotkeys);
+
+                try
+                {
+                    settings.Current.Hotkeys["overlay.pin"] = marker;
+                    settings.Current.DisabledHotkeys.Clear();
+
+                    string hint = window!.HintForTest("PinOnCapture");
+
+                    if (!hint.Contains(marker, StringComparison.Ordinal))
+                    {
+                        throw new InvalidOperationException($"改键后说明未跟随，实际文案：{hint}");
+                    }
+
+                    if (hint.Contains("F3", StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new InvalidOperationException($"改键后说明里仍残留旧键名 F3：{hint}");
+                    }
+                }
+                finally
+                {
+                    settings.Current.Hotkeys.Clear();
+
+                    foreach (var pair in original)
+                    {
+                        settings.Current.Hotkeys[pair.Key] = pair.Value;
+                    }
+
+                    settings.Current.DisabledHotkeys.Clear();
+                    settings.Current.DisabledHotkeys.AddRange(originalDisabled);
+                }
+            });
+
             Check("键位录制：合法组合可录入、非法按键被拒绝", () =>
             {
                 // 纯修饰键不能单独作为热键

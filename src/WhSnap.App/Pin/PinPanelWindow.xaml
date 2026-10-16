@@ -349,10 +349,11 @@
                                        Style="{StaticResource Focal.BodyText}"
                                        Text="当前没有贴图。"
                                        TextAlignment="Center" />
-                            <TextBlock Margin="0,6,0,0"
+                            <TextBlock x:Name="EmptyHintText"
+                                       Margin="0,6,0,0"
                                        HorizontalAlignment="Center"
                                        Style="{StaticResource Focal.CaptionText}"
-                                       Text="把图放进剪贴板后从托盘菜单选「从剪贴板贴图」，或在截图遮罩里按 F3 直接贴图。"
+                                       Text="把图放进剪贴板后从托盘菜单选「从剪贴板贴图」，或在截图遮罩里直接贴图。"
                                        TextAlignment="Center"
                                        TextWrapping="Wrap" />
                         </StackPanel>

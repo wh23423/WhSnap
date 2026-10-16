@@ -170,9 +170,17 @@ internal partial class PinPanelWindow : Window
         _manager.PinsChanged -= OnPinsChanged;
     }
 
-    private void Refresh()
+    /// <summary>动作当前的键位文本（读 PinManager 的绑定）；未绑定/停用时返回回退值。</summary>
+    private string ActionKeyText(string actionId, string fallback)
     {
-        var rows = _manager.Pins
+        var binding = _manager.KeyBindings
+            .FirstOrDefault(b => string.Equals(b.ActionId, actionId, StringComparison.OrdinalIgnoreCase));
+
+        return binding is { IsActive: true } ? binding.Keys!.Trim() : fallback;
+    }
+
+    private void Refresh()
+    {        var rows = _manager.Pins
             .OrderByDescending(pin => pin.ZIndex)
             .Select(pin => new PinRow(pin))
             .ToList();
@@ -180,6 +188,14 @@ internal partial class PinPanelWindow : Window
         PinList.ItemsSource = rows;
         // 空状态：列表空时给"人话 + 怎么产生贴图"，而不是一片黑
         EmptyState.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        if (rows.Count == 0)
+        {
+            // 键位可改，说明里的键必须取当前绑定（写死 F3 会在改键后变成错的指引）。
+            EmptyHintText.Text =
+                $"把图放进剪贴板后从托盘菜单选「从剪贴板贴图」，"
+                + $"或在截图遮罩里按 {ActionKeyText("overlay.pin", "F3")} 直接贴图。";
+        }
 
         int total = _manager.Count;
         int visible = _manager.VisibleCount;

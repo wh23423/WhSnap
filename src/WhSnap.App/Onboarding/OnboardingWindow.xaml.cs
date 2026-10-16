@@ -256,6 +256,15 @@ internal sealed partial class OnboardingWindow : Window
         ApplyRow(RowCapture, "capture.region");
         ApplyRow(RowPinClipboard, "capture.pinClipboard");
         ApplyRow(RowSettings, "settings.open");
+
+        // Hero 与自启动说明里的键位同样要跟着绑定走：写死 F1 会在用户改键后
+        // 与同一页的键帽自相矛盾（"按一下 F1" + 一枚显示 Ctrl+Shift+A 的键帽）。
+        string captureKeys = string.IsNullOrWhiteSpace(BindingKeys("capture.region"))
+            ? "快捷键"
+            : FormatKeys(BindingKeys("capture.region"));
+
+        HeroHeadline.Text = $"按一下 {captureKeys}，就能截下屏幕上的任何一块";
+        AutoStartHint.Text = $"登录 Windows 后自动驻留托盘，{captureKeys} 随时可用。之后可以在托盘菜单里改。";
     }
 
     private void ApplyRow(Button row, string actionId)

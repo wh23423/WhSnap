@@ -916,6 +916,19 @@ internal sealed class PinWindow : IDisposable
         CloseAll,
     }
 
+    /// <summary>
+    /// 动作当前的键位文本（读 <see cref="PinManager.KeyBindings"/>）。
+    /// 右键菜单必须用它而不是写死 Ctrl+C/Delete——贴图窗口的按键可配置，
+    /// 写死会让改键后的菜单显示错的快捷键。
+    /// </summary>
+    private string KeyText(string actionId, string fallback)
+    {
+        var binding = _manager.KeyBindings
+            .FirstOrDefault(b => string.Equals(b.ActionId, actionId, StringComparison.OrdinalIgnoreCase));
+
+        return binding is { IsActive: true } ? binding.Keys!.Trim() : fallback;
+    }
+
     private void ShowContextMenu()
     {
         IntPtr menu = NativeMethods.CreatePopupMenu();
@@ -926,33 +939,33 @@ internal sealed class PinWindow : IDisposable
 
         try
         {
-            Append(menu, MenuCommand.Copy, "复制到剪贴板\tCtrl+C");
-            Append(menu, MenuCommand.SaveAs, "另存为…\tCtrl+S");
-            Append(menu, MenuCommand.Annotate, "贴图内标注\t空格");
+            Append(menu, MenuCommand.Copy, $"复制到剪贴板\t{KeyText("pin.copy", "Ctrl+C")}");
+            Append(menu, MenuCommand.SaveAs, $"另存为…\t{KeyText("pin.saveAs", "Ctrl+S")}");
+            Append(menu, MenuCommand.Annotate, $"贴图内标注\t{KeyText("pin.annotate", "空格")}");
             Append(menu, 0, null);
 
             Append(menu, MenuCommand.ZoomIn, "放大\t滚轮上");
             Append(menu, MenuCommand.ZoomOut, "缩小\t滚轮下");
-            Append(menu, MenuCommand.ZoomReset, "恢复 100%\t0");
+            Append(menu, MenuCommand.ZoomReset, $"恢复 100%\t{KeyText("pin.resetZoom", "0")}");
             Append(menu, 0, null);
 
-            Append(menu, MenuCommand.RotateClockwise, "顺时针旋转 90°\t1");
-            Append(menu, MenuCommand.RotateCounterClockwise, "逆时针旋转 90°\t2");
-            Append(menu, MenuCommand.FlipHorizontal, "水平翻转\t3", State.FlipHorizontal);
-            Append(menu, MenuCommand.FlipVertical, "垂直翻转\t4", State.FlipVertical);
+            Append(menu, MenuCommand.RotateClockwise, $"顺时针旋转 90°\t{KeyText("pin.rotateCw", "1")}");
+            Append(menu, MenuCommand.RotateCounterClockwise, $"逆时针旋转 90°\t{KeyText("pin.rotateCcw", "2")}");
+            Append(menu, MenuCommand.FlipHorizontal, $"水平翻转\t{KeyText("pin.flipH", "3")}", State.FlipHorizontal);
+            Append(menu, MenuCommand.FlipVertical, $"垂直翻转\t{KeyText("pin.flipV", "4")}", State.FlipVertical);
             Append(menu, 0, null);
 
-            Append(menu, MenuCommand.Thumbnail, "缩略图模式\tShift+双击", State.Thumbnail);
+            Append(menu, MenuCommand.Thumbnail, $"缩略图模式\t{KeyText("pin.thumbnail", "T")}", State.Thumbnail);
             Append(menu, MenuCommand.OpacityFull, "不透明度 100%", State.Opacity == 100);
             Append(menu, MenuCommand.Opacity80, "不透明度 80%", State.Opacity == 80);
             Append(menu, MenuCommand.Opacity60, "不透明度 60%", State.Opacity == 60);
             Append(menu, MenuCommand.Opacity40, "不透明度 40%", State.Opacity == 40);
             Append(menu, MenuCommand.Opacity20, "不透明度 20%", State.Opacity == 20);
-            Append(menu, MenuCommand.ClickThrough, "鼠标穿透\tP", State.ClickThrough);
+            Append(menu, MenuCommand.ClickThrough, $"鼠标穿透\t{KeyText("pin.clickThrough", "P")}", State.ClickThrough);
             Append(menu, 0, null);
 
-            Append(menu, MenuCommand.Hide, "隐藏\t双击/Esc");
-            Append(menu, MenuCommand.Close, "关闭这张贴图\tDelete");
+            Append(menu, MenuCommand.Hide, $"隐藏\t{KeyText("pin.hide", "H")}");
+            Append(menu, MenuCommand.Close, $"关闭这张贴图\t{KeyText("pin.close", "Delete")}");
             Append(menu, 0, null);
             Append(menu, MenuCommand.ShowAll, "显示全部贴图");
             Append(menu, MenuCommand.HideAll, "隐藏全部贴图");

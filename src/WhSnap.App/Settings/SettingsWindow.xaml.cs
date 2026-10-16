@@ -291,12 +291,12 @@ internal partial class SettingsWindow : Window
         ["CaptureBackend"] = "自动按 WGC → DXGI → GDI 降级；抓不到画面时再手动指定。",
         ["CopyOnCapture"] = "确认时同时写 DIB 与 PNG 两种格式，粘到聊天窗口不会糊。",
         ["SaveOnCapture"] = "确认时按文件名模板落盘到默认目录，不弹「另存为」对话框。",
-        ["PinOnCapture"] = "确认后立刻钉在屏幕上，等价于在遮罩里按 F3。",
+        ["PinOnCapture"] = "确认后立刻钉在屏幕上，等价于在遮罩里按 {overlay.pin}。",
         ["OverlayDimOpacity"] = "只压暗未选中区域。屏幕本身很暗时降到 30% 以下更舒服。",
         ["ElementDetectionEnabled"] = "光标下的控件会高亮，单击即按控件边界选区。",
         ["ElementDetectionUseUia"] = "关掉后只用窗口矩形回退，只能识别整窗。",
         // 取色器
-        ["ColorCopyFormat"] = "按 C 取色时写进剪贴板的表示法；「四种」会写成多行。",
+        ["ColorCopyFormat"] = "按 {overlay.pickColor} 取色时写进剪贴板的表示法；「四种」会写成多行。",
         ["ColorHistoryRetention"] = "最近取到的颜色保留多少个，可在遮罩与托盘里复用。",
         ["OverlayShowColorHistory"] = "在遮罩左下角画出最近取到的色块，按对应数字键直接复用。",
         // 保存
@@ -345,12 +345,36 @@ internal partial class SettingsWindow : Window
         ["UpdateManifestUrl"] = "默认取 GitHub Releases 的 update.json。",
     };
 
-    private static string HintFor(SettingDefinition definition) =>
-        Hints.TryGetValue(definition.Key, out string? hint) && !string.IsNullOrWhiteSpace(hint)
-            ? hint
+    /// <summary>
+    /// 说明文案里的 <c>{动作 id}</c> 占位符换成**当前**键位文本。
+    /// 理由：键位可改，写死默认键会让改键后的说明变成错的（例如"等价于按 F3"）。
+    /// </summary>
+    private string HintFor(SettingDefinition definition)
+    {
+        string hint = Hints.TryGetValue(definition.Key, out string? text) && !string.IsNullOrWhiteSpace(text)
+            ? text
             : string.IsNullOrWhiteSpace(definition.Description)
                 ? $"{definition.Label}：改完立即生效。"
                 : definition.Description;
+
+        return HotkeyPlaceholder.Replace(hint, KeyText);
+    }
+
+    /// <summary>自检用：取某个配置项当前显示的说明文案（用于断言"文案跟随当前绑定"）。</summary>
+    internal string HintForTest(string settingKey)
+    {
+        var definition = SettingsSchema.All.FirstOrDefault(item => item.Key == settingKey);
+        return definition is null ? string.Empty : HintFor(definition);
+    }
+
+    /// <summary>动作当前的键位文本；未绑定/已停用时返回"未绑定"。</summary>
+    private string KeyText(string actionId)
+    {
+        var binding = _settings.ResolveHotkeys()
+            .FirstOrDefault(b => string.Equals(b.ActionId, actionId, StringComparison.OrdinalIgnoreCase));
+
+        return binding is { IsActive: true } ? binding.Keys!.Trim() : "未绑定";
+    }
 
     /// <summary>分组标题右侧的一句话（"7 项 · 采集后端、确认动作与元素检测"）。</summary>
     private static readonly Dictionary<string, string> GroupSummaries = new(StringComparer.OrdinalIgnoreCase)

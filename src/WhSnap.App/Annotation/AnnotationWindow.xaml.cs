@@ -178,6 +178,7 @@ internal partial class AnnotationWindow : Window
 
         SizeReadout.Text = $"{region.Width} × {region.Height} · 1:1";
         ActionBar.ToolTip = ToolbarHint;
+        ApplyKeyBindings();
 
         SyncUi();
         Recompose();
@@ -199,10 +200,79 @@ internal partial class AnnotationWindow : Window
 
     public event Action? Cancelled;
 
-    /// <summary>工具与快捷键提示（挂到动作条的 ToolTip 上，不占地方）。</summary>
-    internal static string ToolbarHint =>
-        "工具键位与截图/贴图窗口一致，全部可在设置里改：V 选择 · R 矩形 · O 椭圆 · L 直线 · A 箭头 · D 铅笔 · "
-        + "M 马克笔 · Y 高亮 · G 马赛克 · B 模糊 · X 橡皮擦 · T 文字 · N 序号 · Ctrl+Z/Y 撤销重做 · [ ] 线宽 · 1-8 换色";
+    /// <summary>
+    /// 动作条的键位提示。工具与快捷键都是**从目录与当前绑定算出来的**：
+    /// 写死字母和 Ctrl+Z 会在改键后变成错的说明，改键后这里必须跟着变。
+    /// </summary>
+    private string ToolbarHint
+    {
+        get
+        {
+            var parts = new List<string>();
+            var settings = _settings;
+
+            foreach (var action in HotkeyCatalog.All.Where(a => a.Category == "标注工具"))
+            {
+                string? keys = BindingKeys(action.Id, settings, HotkeyScope.Annotation);
+
+                if (!string.IsNullOrWhiteSpace(keys))
+                {
+                    parts.Add($"{keys} {action.DisplayName.Replace("工具：", string.Empty, StringComparison.Ordinal)}");
+                }
+            }
+
+            parts.Add($"{Keycap("annotation.undo")}/{Keycap("annotation.redo")} 撤销重做");
+            parts.Add("[ ] 线宽");
+
+            int paletteCount = ParsePalette(settings.AnnotationPalette).Count;
+
+            if (paletteCount > 0)
+            {
+                parts.Add($"1-{paletteCount} 换色");
+            }
+
+            return "工具键位与截图/贴图窗口一致，全部可在设置里改：" + string.Join(" · ", parts);
+        }
+    }
+
+    /// <summary>把 <c>Ctrl+Z</c> 显示成键帽观感的 <c>Ctrl Z</c>（数据字体下更易读）。</summary>
+    private string Keycap(string actionId) => Keycap(actionId, _settings);
+
+    private string Keycap(string actionId, AppSettings settings)
+    {
+        string? keys = BindingKeys(actionId, settings, HotkeyScope.Annotation);
+        return string.IsNullOrWhiteSpace(keys) ? "未绑定" : keys.Replace("+", " ", StringComparison.Ordinal);
+    }
+
+    private static string? BindingKeys(string actionId, AppSettings settings, HotkeyScope scope) =>
+        HotkeyBindings.Resolve(settings.Hotkeys, settings.DisabledHotkeys, scope)
+            .FirstOrDefault(b => string.Equals(b.ActionId, actionId, StringComparison.OrdinalIgnoreCase))
+            is { IsActive: true } binding
+                ? binding.Keys!.Trim()
+                : null;
+
+    /// <summary>把动作条上的键帽与 ToolTip 换成当前绑定（键位可改，不能写死）。</summary>
+    private void ApplyKeyBindings()
+    {
+        var settings = _settings;
+
+        void Apply(string actionId, TextBlock keycap, System.Windows.Controls.Button button)
+        {
+            string? keys = BindingKeys(actionId, settings, HotkeyScope.Annotation);
+            string shown = string.IsNullOrWhiteSpace(keys) ? "未绑定" : keys;
+            keycap.Text = shown.Replace("+", " ", StringComparison.Ordinal);
+            button.ToolTip = HotkeyPlaceholder.Replace(button.ToolTip as string ?? string.Empty, id =>
+            {
+                string? bound = BindingKeys(id, settings, HotkeyScope.Annotation);
+                return string.IsNullOrWhiteSpace(bound) ? "未绑定" : bound;
+            });
+        }
+
+        Apply("annotation.undo", UndoKeycap, UndoButton);
+        Apply("annotation.redo", RedoKeycap, RedoButton);
+        Apply("annotation.cancel", CancelKeycap, CancelButton);
+        Apply("annotation.confirm", ConfirmKeycap, ConfirmButton);
+    }
 
     // ---------------------------------------------------------------- 生命周期
 

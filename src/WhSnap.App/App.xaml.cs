@@ -275,8 +275,8 @@ public partial class App : System.Windows.Application
         }
         else
         {
-            string capture = _settings.ResolveHotkeys().First(binding => binding.ActionId == "capture.region").Keys ?? "(未绑定)";
-            _tray.ShowBalloon("WhSnap 已启动", $"按 {capture} 开始截图（Enter 确认，F3 直接贴图），或双击托盘图标。");
+            string capture = KeyText("capture.region", "(未绑定)");
+            _tray.ShowBalloon("WhSnap 已启动", $"按 {capture} 开始截图（{KeyText("overlay.confirm", "Enter")} 确认，{KeyText("overlay.pin", "F3")} 直接贴图），或双击托盘图标。");
         }
 
         // 注册失败的热键必须显式告知，绝不静默失败（§5.7）
@@ -359,6 +359,19 @@ public partial class App : System.Windows.Application
     {
         var capture = _settings?.ResolveHotkeys().FirstOrDefault(binding => binding.ActionId == "capture.region");
         return capture?.Keys ?? "未绑定";
+    }
+
+    /// <summary>
+    /// 某个动作**当前**的键位文本，用于用户可见文案。
+    /// 键位可改，所以启动气泡这类文案绝不能写死 F1/F3——一律经过这里取当前值。
+    /// 未绑定或已停用时返回 <paramref name="fallback"/>。
+    /// </summary>
+    private string KeyText(string actionId, string fallback = "未绑定")
+    {
+        var binding = _settings?.ResolveHotkeys()
+            .FirstOrDefault(b => string.Equals(b.ActionId, actionId, StringComparison.OrdinalIgnoreCase));
+
+        return binding is { IsActive: true } ? binding.Keys!.Trim() : fallback;
     }
 
     /// <summary>按当前配置重新注册全部全局热键，并把最新绑定推给遮罩/贴图窗口。</summary>

@@ -321,25 +321,25 @@
 
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button x:Name="UndoButton" Style="{StaticResource Focal.Button.Quiet}"
-                            Click="OnUndoClick" ToolTip="撤销（Ctrl+Z）" AutomationProperties.Name="撤销">
+                            Click="OnUndoClick" ToolTip="撤销（{annotation.undo}）" AutomationProperties.Name="撤销">
                         <StackPanel Orientation="Horizontal">
                             <theme:FocalIcon Icon="undo" Size="{StaticResource Focal.IconSm}"
                                              TextElement.Foreground="{StaticResource Focal.OnDarkMutedBrush}"/>
                             <TextBlock Style="{StaticResource An.ControlLabel}" Text="撤销" Margin="6,0,0,0"/>
                             <Border Style="{StaticResource Focal.Kbd}" Margin="6,0,0,0">
-                                <TextBlock Style="{StaticResource Focal.KbdText}" Text="Ctrl Z"/>
+                                <TextBlock x:Name="UndoKeycap" Style="{StaticResource Focal.KbdText}" Text="Ctrl Z"/>
                             </Border>
                         </StackPanel>
                     </Button>
 
                     <Button x:Name="RedoButton" Style="{StaticResource Focal.Button.Quiet}"
-                            Click="OnRedoClick" ToolTip="重做（Ctrl+Y）" AutomationProperties.Name="重做">
+                            Click="OnRedoClick" ToolTip="重做（{annotation.redo}）" AutomationProperties.Name="重做">
                         <StackPanel Orientation="Horizontal">
                             <theme:FocalIcon Icon="redo" Size="{StaticResource Focal.IconSm}"
                                              TextElement.Foreground="{StaticResource Focal.OnDarkMutedBrush}"/>
                             <TextBlock Style="{StaticResource An.ControlLabel}" Text="重做" Margin="6,0,0,0"/>
                             <Border Style="{StaticResource Focal.Kbd}" Margin="6,0,0,0">
-                                <TextBlock Style="{StaticResource Focal.KbdText}" Text="Ctrl Y"/>
+                                <TextBlock x:Name="RedoKeycap" Style="{StaticResource Focal.KbdText}" Text="Ctrl Y"/>
                             </Border>
                         </StackPanel>
                     </Button>
@@ -368,26 +368,26 @@
                     </Button>
 
                     <Button x:Name="CancelButton" Style="{StaticResource Focal.Button.Secondary}"
-                            Click="OnCancelClick" ToolTip="取消标注（Esc）" AutomationProperties.Name="取消">
+                            Click="OnCancelClick" ToolTip="取消标注（{annotation.cancel}）" AutomationProperties.Name="取消">
                         <StackPanel Orientation="Horizontal">
                             <theme:FocalIcon Icon="x" Size="{StaticResource Focal.IconSm}"
                                              TextElement.Foreground="{StaticResource Focal.OnDarkMutedBrush}"/>
                             <TextBlock Style="{StaticResource An.ControlLabel}" Text="取消" Margin="6,0,0,0"/>
                             <Border Style="{StaticResource Focal.Kbd}" Margin="6,0,0,0">
-                                <TextBlock Style="{StaticResource Focal.KbdText}" Text="Esc"/>
+                                <TextBlock x:Name="CancelKeycap" Style="{StaticResource Focal.KbdText}" Text="Esc"/>
                             </Border>
                         </StackPanel>
                     </Button>
 
                     <Button x:Name="ConfirmButton" Style="{StaticResource Focal.Button.Primary}"
-                            Click="OnConfirmClick" ToolTip="确认标注（Enter）" AutomationProperties.Name="完成"
+                            Click="OnConfirmClick" ToolTip="确认标注（{annotation.confirm}）" AutomationProperties.Name="完成"
                             Margin="8,0,0,0">
                         <StackPanel Orientation="Horizontal">
                             <theme:FocalIcon Icon="check" Size="{StaticResource Focal.IconSm}"
                                              TextElement.Foreground="{StaticResource Focal.AccentInkBrush}"/>
                             <TextBlock Style="{StaticResource An.ControlLabel}" Text="完成" Margin="6,0,0,0"/>
                             <Border Style="{StaticResource An.KbdPrimary}" Margin="6,0,0,0">
-                                <TextBlock Style="{StaticResource An.KbdTextPrimary}" Text="Enter"/>
+                                <TextBlock x:Name="ConfirmKeycap" Style="{StaticResource An.KbdTextPrimary}" Text="Enter"/>
                             </Border>
                         </StackPanel>
                     </Button>
